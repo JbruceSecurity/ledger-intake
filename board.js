@@ -1,7 +1,7 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 import { SUPABASE_URL, SUPABASE_KEY, APP_PIN } from "./config.js";
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabaseKey = process.env.SUPABASE_KEY
+const supabase = createClient(SUPABASE_URL, supabaseKey);
 
 // PIN gate
 const gate = document.getElementById("gate");
