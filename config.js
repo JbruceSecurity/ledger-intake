@@ -1,3 +1,3 @@
 export const SUPABASE_URL = "https://zdwrjpaufxsbwgbhwwil.supabase.co";
-export const SUPABASE_KEY = "sb_secret_ZR1uB0MN40oT7rza7qz3kw_6Wxj9jK4";
+export const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV6am1wa2VzYXBidHlrZWZuYm5yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk0ODk2ODksImV4cCI6MjA4NTA2NTY4OX0.kTRHcc5U4shyPu75sXkQTGZnXHAZnUsNRjzcvoZwWCE";
 export const APP_PIN = "2050";
