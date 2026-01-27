@@ -1,91 +1,49 @@
 <!doctype html>
 <html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Ledger Intake (Admin)</title>
-    <style>
-      body { font-family: -apple-system, system-ui, Arial; padding: 14px; }
-      input, button { font-size: 16px; padding: 10px; width: 100%; box-sizing: border-box; }
-      label { display:block; margin: 10px 0 6px; }
-      .row { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-      .muted { color:#666; font-size: 13px; }
-      .topbar { display:flex; gap: 10px; align-items:center; justify-content: space-between; }
-      .topbar a { font-size: 14px; }
-      table { width:100%; border-collapse: collapse; margin-top: 12px; }
-      th, td { border:1px solid #ddd; padding: 8px; font-size: 14px; }
-      th { background:#f5f5f5; text-align:left; }
-      .hidden { display:none; }
-      .card { border:1px solid #ddd; padding: 12px; border-radius: 12px; }
-    </style>
-  </head>
-  <body>
-    <div class="topbar">
-      <b>Ledger Intake (Admin)</b>
-      <div>
-        <a href="./board.html">Officer Board</a>
-        &nbsp;|&nbsp;
-        <button id="lockBtn" style="width:auto; padding:8px 10px;">Lock</button>
-      </div>
-    </div>
-    <div class="muted">PIN-gated. Shared link + shared Supabase DB.</div>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Officer Check-In</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Arial; padding: 14px; }
+    input, button { width: 100%; font-size: 18px; padding: 12px; box-sizing: border-box; }
+    .row { display:flex; gap:10px; margin-top:10px; }
+    .row > * { flex:1; }
+    .card { border:1px solid #ddd; border-radius:12px; padding:12px; margin-top:12px; }
+    .big { font-size:22px; font-weight:800; }
+    .muted { color:#666; }
+    .hidden { display:none; }
+    .ok { font-weight:700; }
+  </style>
+</head>
+<body>
+  <h1>Officer Check-In</h1>
+  <div class="muted">Search PO → press Check In → follow instruction.</div>
 
-    <!-- PIN GATE -->
-    <div id="gate" class="card" style="margin-top:12px;">
-      <b>Enter PIN</b>
-      <div class="muted">Ask Jessie for the PIN.</div>
-      <label>PIN</label>
-      <input id="pinInput" inputmode="numeric" placeholder="••••" />
-      <button id="pinBtn" style="margin-top:10px;">Unlock</button>
-      <p id="pinMsg" class="muted"></p>
+  <div id="gate" class="card">
+    <div class="big">Enter PIN</div>
+    <input id="pin" inputmode="numeric" placeholder="••••" style="margin-top:10px;">
+    <button id="unlock" style="margin-top:10px;">Unlock</button>
+    <div id="pinMsg" class="muted" style="margin-top:8px;"></div>
+  </div>
+
+  <div id="app" class="hidden">
+    <input id="po" maxlength="5" inputmode="numeric" placeholder="Enter 5-digit PO">
+    <div class="row">
+      <button id="searchBtn">Search</button>
+      <button id="resetBtn" type="button">Reset</button>
     </div>
 
-    <!-- APP -->
-    <div id="app" class="hidden">
-      <form id="intakeForm" style="margin-top:12px;">
-        <label>PO Number (5 digits)*</label>
-        <input id="po" maxlength="5" inputmode="numeric" required />
+    <div id="msg" class="muted" style="margin-top:10px;"></div>
 
-        <div class="row">
-          <div>
-            <label>Ledger Time</label>
-            <input id="ledger_time" placeholder="e.g., 0500" />
-          </div>
-          <div>
-            <label>Cases</label>
-            <input id="cases" type="number" min="0" />
-          </div>
-        </div>
+    <div id="result" class="card hidden"></div>
 
-        <div class="row">
-          <div>
-            <label>Shipper</label>
-            <input id="shipper" />
-          </div>
-          <div>
-            <label>Carrier</label>
-            <input id="carrier" />
-          </div>
-        </div>
-
-        <label>Ledger Door (optional)</label>
-        <input id="ledger_door" placeholder="e.g., 12" />
-
-        <button type="submit" style="margin-top:10px;">Add PO</button>
-      </form>
-
-      <p id="msg"></p>
-
-      <hr />
-
-      <div class="row">
-        <button id="refreshBtn" type="button">Refresh</button>
-        <input id="searchPO" maxlength="5" inputmode="numeric" placeholder="Search PO…" />
-      </div>
-
-      <div id="tableWrap"></div>
+    <div id="instruction" class="card hidden">
+      <div class="big">Instruction</div>
+      <div id="instructionText" style="margin-top:8px; font-size:18px;"></div>
     </div>
+  </div>
 
-    <script type="module" src="./script.js"></script>
-  </body>
+  <script type="module" src="./board.js"></script>
+</body>
 </html>
