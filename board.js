@@ -26,10 +26,6 @@ function showGate() {
 }
 
 unlock.addEventListener("click", () => {
-
-  console.log(pin.value)
-
-  
   if ((pin.value || "").trim() === APP_PIN) {
     setUnlocked(true);
     pinMsg.textContent = "";
