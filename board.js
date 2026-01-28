@@ -1,7 +1,13 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { SUPABASE_URL, SUPABASE_KEY, APP_PIN } from "./config.js";
+import { SUPABASE_URL, SUPABASE_KEY, SUPABASE_KEY2, APP_PIN } from "./config.js";
 const supabaseKey = process.env.SUPABASE_KEY
+const supabaseKey2 = process.env.SUPABASE_KEY2
+
+console.log( supabaseKey)
+console.log( supabaseKey2)
+
 const supabase = createClient(SUPABASE_URL, supabaseKey);
+const supabase2 = createClient(SUPABASE_URL, supabaseKey2);
 
 // PIN gate
 const gate = document.getElementById("gate");
@@ -112,6 +118,7 @@ async function doSearch(po) {
   }
 
   msg.textContent = "";
+  console.log (data)
   renderRow(data);
 }
 
@@ -131,3 +138,6 @@ resetBtn.addEventListener("click", () => {
   result.classList.add("hidden");
   instructionCard.classList.add("hidden");
 });
+
+
+doSearch(12345)()
