@@ -1,10 +1,10 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 import { SUPABASE_URL, SUPABASE_KEY, SUPABASE_KEY2, APP_PIN } from "./config.js";
-const supabaseKey = process.env.SUPABASE_KEY
-const supabaseKey2 = process.env.SUPABASE_KEY2
+const supabaseKey = SUPABASE_KEY
+const supabaseKey2 = SUPABASE_KEY2
 
-console.log( supabaseKey)
-console.log( supabaseKey2)
+console.log(supabaseKey)
+console.log(supabaseKey2)
 
 const supabase = createClient(SUPABASE_URL, supabaseKey);
 const supabase2 = createClient(SUPABASE_URL, supabaseKey2);
