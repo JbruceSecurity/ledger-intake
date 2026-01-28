@@ -1,13 +1,10 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { SUPABASE_URL, SUPABASE_KEY, SUPABASE_KEY2, APP_PIN } from "./config.js";
+import { SUPABASE_URL, SUPABASE_KEY, APP_PIN } from "./config.js";
 const supabaseKey = SUPABASE_KEY
-const supabaseKey2 = SUPABASE_KEY2
 
 console.log(supabaseKey)
-console.log(supabaseKey2)
 
 const supabase = createClient(SUPABASE_URL, supabaseKey);
-const supabase2 = createClient(SUPABASE_URL, supabaseKey2);
 
 // PIN gate
 const gate = document.getElementById("gate");
@@ -139,30 +136,3 @@ resetBtn.addEventListener("click", () => {
   instructionCard.classList.add("hidden");
 });
 
-async function doSearch2(po) {
-  msg.textContent = "Searching…";
-  result.classList.add("hidden");
-  instructionCard.classList.add("hidden");
-
-  const { data, error } = await supabase2
-    .from("trucks")
-    .select("po_number, carrier, shipper, ledger_door, confirmed_door, status")
-    .eq("po_number", po)
-    .maybeSingle();
-
-  if (error) {
-    msg.textContent = `Search error: ${error.message}`;
-    return;
-  }
-  if (!data) {
-    msg.textContent = "PO not found.";
-    return;
-  }
-
-  msg.textContent = "";
-  console.log (data)
-  renderRow(data);
-}
-
-doSearch(12345)()
-doSearch2(12345)()
