@@ -139,5 +139,30 @@ resetBtn.addEventListener("click", () => {
   instructionCard.classList.add("hidden");
 });
 
+async function doSearch2(po) {
+  msg.textContent = "Searching…";
+  result.classList.add("hidden");
+  instructionCard.classList.add("hidden");
+
+  const { data, error } = await supabase2
+    .from("trucks")
+    .select("po_number, carrier, shipper, ledger_door, confirmed_door, status")
+    .eq("po_number", po)
+    .maybeSingle();
+
+  if (error) {
+    msg.textContent = `Search error: ${error.message}`;
+    return;
+  }
+  if (!data) {
+    msg.textContent = "PO not found.";
+    return;
+  }
+
+  msg.textContent = "";
+  console.log (data)
+  renderRow(data);
+}
 
 doSearch(12345)()
+doSearch2(12345)()
