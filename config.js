@@ -1,4 +1,0 @@
-export const SUPABASE_URL = "https://uzjmpkesapbtykefnbnr.supabase.co";
-export const SUPABASE_KEY ="sb_publishable_U3CndPueW-qlj4qhsDgRnQ_06k0I1EH";
-export const SUPABASE_KEY2 = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV6am1wa2VzYXBidHlrZWZuYm5yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk0ODk2ODksImV4cCI6MjA4NTA2NTY4OX0.kTRHcc5U4shyPu75sXkQTGZnXHAZnUsNRjzcvoZwWCE"
-export const APP_PIN = "2050";
