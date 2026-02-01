@@ -1,334 +1,65 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Ledger Intake (Admin)</title>
-  <style>
-    body { font-family: -apple-system, system-ui, Arial; padding: 14px; }
-    h1 { margin: 0 0 10px; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    label { display: block; font-size: 14px; margin: 10px 0 6px; }
-    input, select, button, textarea { width: 100%; font-size: 16px; padding: 10px; }
-    button { cursor: pointer; }
-    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-    .msg { margin: 10px 0; font-weight: 600; }
-    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-    th, td { border: 1px solid #ddd; padding: 8px; font-size: 14px; }
-    th { background: #f5f5f5; text-align: left; }
-    .pill { display:inline-block; padding:3px 8px; border-radius:999px; font-size:12px; border:1px solid #ddd; }
-    .muted { color:#666; font-size: 13px; }
-    .danger { border:1px solid #f2b8b5; background:#fff5f5; padding:10px; border-radius:10px; }
-  </style>
+
+  <!-- Shared styles -->
+  <link rel="stylesheet" href="./styles.css">
 </head>
+
 <body>
   <h1>Ledger Intake (Admin)</h1>
-  <div class="muted">Offline / local storage. Use Export to share with officers.</div>
+  <p class="muted">Security intake — live view shared with officers</p>
 
-  <div class="danger" style="margin-top:12px;">
-    <b>Today workflow:</b> Enter trucks → tap <b>Export</b> → AirDrop the JSON file to officers → they Import in <b>board.html</b>.
-  </div>
-
+  <!-- Intake form -->
   <form id="form">
-    <label>PO Number (exactly 5 digits)*</label>
-    <input id="po" maxlength="5" inputmode="numeric" placeholder="12345" required />
+    <label>PO Number (5 digits)</label>
+    <input id="po" maxlength="5" inputmode="numeric" required />
 
     <div class="row">
       <div>
         <label>Carrier</label>
-        <input id="carrier" placeholder="e.g., Swift" />
+        <input id="carrier" />
       </div>
       <div>
         <label>Shipper</label>
-        <input id="shipper" placeholder="e.g., Vendor name" />
+        <input id="shipper" />
       </div>
     </div>
 
-    <div class="row">
-      <div>
-        <label>Ledger Door (optional)</label>
-        <input id="ledgerDoor" placeholder="e.g., 12" />
-      </div>
-      <div>
-        <label>Confirmed Door (optional)</label>
-        <input id="confirmedDoor" placeholder="e.g., 12" />
-      </div>
-    </div>
+    <label>Ledger Door (optional)</label>
+    <input id="ledgerDoor" placeholder="From warehouse ledger (may change)" />
 
-    <div class="row">
-      <div>
-        <label>Status</label>
-        <select id="status">
-          <option>Waiting / Not Arrived</option>
-          <option>Arrived / Checking In</option>
-          <option>Park & Check In</option>
-          <option>Docked</option>
-          <option>Rejected</option>
-          <option>Rescheduled</option>
-        </select>
-      </div>
-      <div>
-        <label>Instruction Notes (optional)</label>
-        <input id="notes" placeholder="e.g., Park and run to Door 7" />
-      </div>
-    </div>
+    <label>Status</label>
+    <select id="status">
+      <option>Queue</option>
+      <option>Checked In</option>
+    </select>
 
-    <div class="actions">
-      <button type="submit">Save / Update PO</button>
-      <button type="button" id="clearForm">Clear</button>
-    </div>
+    <label>Notes (optional)</label>
+    <input id="notes" placeholder="Short note for officers" />
+
+    <button type="submit">Save / Update</button>
   </form>
 
-  <div class="actions" style="margin-top:12px;">
-    <button type="button" id="exportBtn">Export JSON (for officers)</button>
-    <button type="button" id="importBtn">Import JSON</button>
-  </div>
+  <!-- Status message -->
+  <p id="msg" class="muted"></p>
 
-  <p class="msg" id="msg"></p>
-
+  <!-- Search -->
   <label>Search PO</label>
-  <input id="search" maxlength="5" inputmode="numeric" placeholder="Type PO digits…" />
+  <input
+    id="search"
+    maxlength="5"
+    inputmode="numeric"
+    placeholder="Type PO digits…"
+  />
 
+  <!-- Results table -->
   <div id="tableWrap"></div>
 
-  <div style="margin-top:14px;" class="muted">
-    Officer page is <b>board.html</b> (read-only).
-  </div>
-
-  <script>
-    const STORAGE_KEY = "ledger_rows_v1";
-
-    const form = document.getElementById("form");
-    const msg = document.getElementById("msg");
-    const tableWrap = document.getElementById("tableWrap");
-    const search = document.getElementById("search");
-
-    const po = document.getElementById("po");
-    const carrier = document.getElementById("carrier");
-    const shipper = document.getElementById("shipper");
-    const ledgerDoor = document.getElementById("ledgerDoor");
-    const confirmedDoor = document.getElementById("confirmedDoor");
-    const status = document.getElementById("status");
-    const notes = document.getElementById("notes");
-
-    const clearFormBtn = document.getElementById("clearForm");
-    const exportBtn = document.getElementById("exportBtn");
-    const importBtn = document.getElementById("importBtn");
-
-    function loadRows() {
-      try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); }
-      catch { return []; }
-    }
-
-    function saveRows(rows) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
-    }
-
-    function isFiveDigits(v) {
-      return /^[0-9]{5}$/.test(v);
-    }
-
-    function instructionFromRow(r) {
-      const door = r.confirmedDoor || r.ledgerDoor || "";
-      if (r.status === "Docked" && door) return `Dock at Door ${door}`;
-      if (r.status === "Park & Check In") return door ? `Park → run to Door ${door}` : "Park → check in";
-      if (r.status === "Rejected") return "Reject – reschedule";
-      if (r.status === "Rescheduled") return "Rescheduled – do not dock";
-      if (r.status === "Arrived / Checking In") return "Checking in";
-      return r.notes || "Await instruction";
-    }
-
-    function pill(text) {
-      return `<span class="pill">${text}</span>`;
-    }
-
-    function render(rows) {
-      const q = (search.value || "").trim();
-      const view = q ? rows.filter(r => String(r.po).includes(q)) : rows;
-
-      if (!view.length) {
-        tableWrap.innerHTML = "<p class='muted'>No rows yet.</p>";
-        return;
-      }
-
-      tableWrap.innerHTML = `
-        <table>
-          <thead>
-            <tr>
-              <th>PO</th>
-              <th>Carrier</th>
-              <th>Status</th>
-              <th>Instruction</th>
-              <th>Door</th>
-              <th>Updated</th>
-              <th>Quick Edit</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${view.map(r => {
-              const door = r.confirmedDoor || r.ledgerDoor || "—";
-              const updated = new Date(r.updatedAt).toLocaleString();
-              return `
-                <tr>
-                  <td><b>${r.po}</b></td>
-                  <td>${r.carrier || ""}</td>
-                  <td>${pill(r.status)}</td>
-                  <td>${instructionFromRow(r)}</td>
-                  <td>${door}</td>
-                  <td>${updated}</td>
-                  <td>
-                    <button data-edit="${r.po}">Edit</button>
-                    <button data-del="${r.po}">Del</button>
-                  </td>
-                </tr>
-              `;
-            }).join("")}
-          </tbody>
-        </table>
-      `;
-    }
-
-    function upsertRow(rows, newRow) {
-      const idx = rows.findIndex(r => r.po === newRow.po);
-      if (idx >= 0) rows[idx] = newRow;
-      else rows.unshift(newRow);
-      return rows;
-    }
-
-    function clearForm() {
-      po.value = "";
-      carrier.value = "";
-      shipper.value = "";
-      ledgerDoor.value = "";
-      confirmedDoor.value = "";
-      status.value = "Waiting / Not Arrived";
-      notes.value = "";
-    }
-
-    // Initial
-    let rows = loadRows();
-    render(rows);
-
-    // Search
-    search.addEventListener("input", () => render(rows));
-
-    // Save / Update
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
-      msg.textContent = "";
-
-      const poVal = po.value.trim();
-      if (!isFiveDigits(poVal)) {
-        msg.textContent = "PO must be exactly 5 digits.";
-        return;
-      }
-
-      const row = {
-        po: poVal,
-        carrier: carrier.value.trim(),
-        shipper: shipper.value.trim(),
-        ledgerDoor: ledgerDoor.value.trim(),
-        confirmedDoor: confirmedDoor.value.trim(),
-        status: status.value,
-        notes: notes.value.trim(),
-        updatedAt: new Date().toISOString()
-      };
-
-      rows = upsertRow(rows, row);
-      saveRows(rows);
-      render(rows);
-      msg.textContent = "Saved.";
-      clearForm();
-    });
-
-    // Clear form
-    clearFormBtn.addEventListener("click", clearForm);
-
-    // Table actions
-    tableWrap.addEventListener("click", (e) => {
-      const btn = e.target.closest("button");
-      if (!btn) return;
-
-      const editPo = btn.getAttribute("data-edit");
-      const delPo = btn.getAttribute("data-del");
-
-      if (editPo) {
-        const r = rows.find(x => x.po === editPo);
-        if (!r) return;
-        po.value = r.po;
-        carrier.value = r.carrier || "";
-        shipper.value = r.shipper || "";
-        ledgerDoor.value = r.ledgerDoor || "";
-        confirmedDoor.value = r.confirmedDoor || "";
-        status.value = r.status || "Waiting / Not Arrived";
-        notes.value = r.notes || "";
-        msg.textContent = "Loaded PO for editing.";
-      }
-
-      if (delPo) {
-        rows = rows.filter(x => x.po !== delPo);
-        saveRows(rows);
-        render(rows);
-        msg.textContent = "Deleted.";
-      }
-    });
-
-    // Export
-    exportBtn.addEventListener("click", async () => {
-      const payload = {
-        exportedAt: new Date().toISOString(),
-        rows
-      };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-      const file = new File([blob], `ledger_export_${new Date().toISOString().slice(0,10)}.json`, { type: "application/json" });
-
-      // iPad-friendly: use share sheet if available
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: "Ledger Export" });
-      } else {
-        // fallback download
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = file.name;
-        a.click();
-        URL.revokeObjectURL(a.href);
-      }
-
-      msg.textContent = "Exported. Send this file to officers.";
-    });
-
-    // Import
-    importBtn.addEventListener("click", () => {
-      const inp = document.createElement("input");
-      inp.type = "file";
-      inp.accept = "application/json";
-      inp.onchange = async () => {
-        const f = inp.files?.[0];
-        if (!f) return;
-        const text = await f.text();
-        const parsed = JSON.parse(text);
-
-        // Accept either {rows:[...]} or plain [...]
-        const incoming = Array.isArray(parsed) ? parsed : (parsed.rows || []);
-        if (!Array.isArray(incoming)) {
-          msg.textContent = "Import failed: file format not recognized.";
-          return;
-        }
-
-        // Merge by PO
-        const map = new Map(rows.map(r => [r.po, r]));
-        for (const r of incoming) {
-          if (r && r.po && isFiveDigits(String(r.po))) map.set(String(r.po), r);
-        }
-        rows = Array.from(map.values()).sort((a,b) => (b.updatedAt||"").localeCompare(a.updatedAt||""));
-        saveRows(rows);
-        render(rows);
-        msg.textContent = "Imported.";
-      };
-      inp.click();
-    });
-  </script>
+  <!-- Admin logic (Supabase + PIN) -->
+  <script type="module" src="./app.js"></script>
 </body>
 </html>
-<script type="module" src="./app.js"></script>
-<link rel="stylesheet" href="./styles.css">
