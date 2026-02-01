@@ -4,33 +4,24 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Ledger Intake (Admin)</title>
-
   <link rel="stylesheet" href="./styles.css">
 </head>
 
 <body>
   <h1>Ledger Intake (Admin)</h1>
   <p class="muted">
-    Security intake. If no ledger door is assigned, drivers follow posted
-    department check-in doors.
+    Admin creates/updates POs. Status stays <b>Queue</b> until officers check in.
+    If no ledger door: Grocery → 56, Produce/Dairy → 93, Meat/Frozen → 132.
   </p>
 
-  <!-- INTAKE FORM -->
   <form id="form">
-
     <label>PO Number (5 digits)</label>
-    <input
-      id="po"
-      maxlength="5"
-      inputmode="numeric"
-      placeholder="12345"
-      required
-    />
+    <input id="po" maxlength="5" inputmode="numeric" placeholder="12345" required />
 
     <div class="row">
       <div>
         <label>Carrier</label>
-        <input id="carrier" placeholder="e.g. Swift" />
+        <input id="carrier" placeholder="e.g., Swift" />
       </div>
       <div>
         <label>Shipper</label>
@@ -38,55 +29,33 @@
       </div>
     </div>
 
-    <!-- DEPARTMENT (REQUIRED) -->
     <label>Department</label>
     <select id="department" required>
       <option value="">Select department</option>
       <option>Grocery</option>
-      <option>Produce</option>
-      <option>Meat Frozen</option>
+      <option>Produce/Dairy</option>
+      <option>Meat/Frozen</option>
     </select>
 
-    <!-- LEDGER DOOR -->
     <label>Ledger Door (optional)</label>
-    <input
-      id="ledgerDoor"
-      placeholder="From warehouse ledger (may be blank)"
-    />
+    <input id="ledgerDoor" placeholder="From warehouse ledger (may be blank)" />
 
-    <!-- STATUS (ONLY TWO) -->
-    <label>Status</label>
-    <select id="status">
-      <option>Queue</option>
-      <option>Checked In</option>
-    </select>
-
-    <!-- NOTES -->
     <label>Notes (optional)</label>
-    <input
-      id="notes"
-      placeholder="Short note for officers (optional)"
-    />
+    <input id="notes" placeholder="Short note for officers (optional)" />
 
-    <button type="submit">Save / Update</button>
+    <div class="actions">
+      <button type="submit">Save / Update</button>
+      <button type="button" id="clearBtn">Clear</button>
+    </div>
   </form>
 
-  <!-- MESSAGE -->
   <p id="msg" class="muted"></p>
 
-  <!-- SEARCH -->
   <label>Search PO</label>
-  <input
-    id="search"
-    maxlength="5"
-    inputmode="numeric"
-    placeholder="Type PO digits…"
-  />
+  <input id="search" maxlength="5" inputmode="numeric" placeholder="Type PO digits…" />
 
-  <!-- TABLE -->
   <div id="tableWrap"></div>
 
-  <!-- ADMIN LOGIC -->
   <script type="module" src="./app.js"></script>
 </body>
 </html>
