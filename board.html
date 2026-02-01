@@ -1,21 +1,28 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Officer Board</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
+
 <body>
+  <h1>Officer Board</h1>
+  <p class="muted">
+    Search PO → follow instruction → tap <b>Mark Checked In</b>.
+  </p>
 
-<h1>Officer Board</h1>
-<p class="muted">Search PO → show status + instruction</p>
+  <label>Search PO</label>
+  <input
+    id="search"
+    maxlength="5"
+    inputmode="numeric"
+    placeholder="Type PO digits…"
+  />
 
-<label>Search PO</label>
-<input id="search" maxlength="5" inputmode="numeric" placeholder="Type PO digits…">
+  <div id="results"></div>
 
-<div id="results"></div>
-
-<script type="module" src="./board.js"></script>
+  <script type="module" src="./board.js"></script>
 </body>
 </html>
