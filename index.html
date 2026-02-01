@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html>
 <head>
@@ -14,7 +13,6 @@
     input, select, button { width: 100%; font-size: 16px; padding: 10px; box-sizing: border-box; }
     button { cursor: pointer; }
     .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-    .actions3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px; }
     .msg { margin: 10px 0; font-weight: 700; }
     table { width: 100%; border-collapse: collapse; margin-top: 12px; }
     th, td { border: 1px solid #ddd; padding: 8px; font-size: 14px; vertical-align: top; }
@@ -96,8 +94,8 @@
   <div id="tableWrap"></div>
 
   <script type="module">
-    // ====== ADMIN PIN (change this) ======
-    const ADMIN_PIN = "1234"; // <-- CHANGE ME
+    // ====== ADMIN PIN (set yours) ======
+    const ADMIN_PIN = "1234"; // <-- set your real pin
 
     // ====== Supabase ======
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
@@ -237,7 +235,7 @@
       msg.textContent = "";
     }
 
-    // Save/Update (status forced to Queue)
+    // Save/Update (status forced to Queue) + Duplicate PO warning
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       msg.textContent = "";
@@ -261,11 +259,19 @@
         last_updated: new Date().toISOString(),
       };
 
-      // Upsert by PO: update if exists, else insert
-      const existing = lastRows.find(r => r.po_number === poVal && !r.archived);
+      const existingAny = lastRows.find(r => r.po_number === poVal);
       let res;
-      if (existing) {
-        res = await supabase.from("trucks").update(payload).eq("id", existing.id);
+
+      if (existingAny && !existingAny.archived) {
+        const ok = confirm(`PO ${poVal} already exists. Update it?`);
+        if (!ok) { msg.textContent = "Canceled (no changes)."; return; }
+        res = await supabase.from("trucks").update(payload).eq("id", existingAny.id);
+
+      } else if (existingAny && existingAny.archived) {
+        const ok = confirm(`PO ${poVal} is archived. Restore + update it?`);
+        if (!ok) { msg.textContent = "Canceled (no changes)."; return; }
+        res = await supabase.from("trucks").update(payload).eq("id", existingAny.id);
+
       } else {
         res = await supabase.from("trucks").insert([payload]);
       }
@@ -288,7 +294,7 @@
     clearBtn.addEventListener("click", clearForm);
     showArchived.addEventListener("change", loadRows);
 
-    // Archive (8 hours)
+    // Archive (8 hours) — requires the SQL function you created
     archiveBtn.addEventListener("click", async () => {
       msg.textContent = "Archiving…";
       const { error } = await supabase.rpc("archive_old_trucks", { hours_old: 8 });
@@ -299,7 +305,7 @@
 
     // Export CSV (Leadership)
     exportBtn.addEventListener("click", () => {
-      const rows = lastRows.slice(); // current view loaded
+      const rows = lastRows.slice(); // currently loaded
       const headers = [
         "po_number","carrier","shipper","department","ledger_door","instruction_door","status",
         "last_updated","archived","archived_at","notes"
@@ -320,7 +326,7 @@
             r.last_updated || "",
             String(!!r.archived),
             r.archived_at || "",
-            (r.notes || "").replaceAll('"','""')
+            (r.notes || "")
           ].map(v => `"${String(v ?? "").replaceAll('"','""')}"`);
           return vals.join(",");
         })
