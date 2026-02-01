@@ -13,7 +13,7 @@
     .row { display:flex; gap:10px; margin-top:10px; }
     .row > * { flex:1; }
     table { width:100%; border-collapse: collapse; margin-top:12px; }
-    th, td { border:1px solid #ddd; padding:8px; font-size:14px; }
+    th, td { border:1px solid #ddd; padding:8px; font-size:14px; vertical-align: top; }
     th { background:#f5f5f5; text-align:left; }
     .pill { display:inline-block; padding:3px 8px; border-radius:999px; font-size:12px; border:1px solid #ddd; }
     .msg { margin: 10px 0; font-weight: 700; }
@@ -23,6 +23,7 @@
   <h1>Officer Board</h1>
   <div class="muted">
     Search PO → verify instruction → tap <b>Checked In</b>.
+    Undo is available for 5 minutes after check-in.
     Door rules: ledger door wins; otherwise Grocery→56, Produce/Dairy→93, Meat/Frozen→132.
   </div>
 
@@ -68,6 +69,13 @@
       return d ? `Check in at Door ${d}` : "Check in (door not set)";
     }
 
+    function canUndo(r) {
+      if ((r.status || "") !== "Checked In") return false;
+      if (!r.last_updated) return false;
+      const ageMs = Date.now() - new Date(r.last_updated).getTime();
+      return ageMs <= 5 * 60 * 1000; // 5 minutes
+    }
+
     function render(rows){
       const q = (searchPO.value || "").trim();
       const view = q ? rows.filter(r => String(r.po_number || "").includes(q)) : rows;
@@ -92,6 +100,12 @@
           <tbody>
             ${view.map(r => {
               const canCheckIn = (r.status === "Queue");
+              const undoOk = canUndo(r);
+
+              let actionHtml = `<button disabled>Done</button>`;
+              if (canCheckIn) actionHtml = `<button data-checkin="${r.id}">Checked In</button>`;
+              else if (undoOk) actionHtml = `<button data-undo="${r.id}">Undo</button>`;
+
               return `
                 <tr>
                   <td><b>${r.po_number || ""}</b></td>
@@ -99,11 +113,7 @@
                   <td>${r.department || ""}</td>
                   <td>${pill(r.status || "")}</td>
                   <td>${instructionText(r)}</td>
-                  <td>
-                    <button data-checkin="${r.id}" ${canCheckIn ? "" : "disabled"}>
-                      ${canCheckIn ? "Checked In" : "Done"}
-                    </button>
-                  </td>
+                  <td>${actionHtml}</td>
                 </tr>
               `;
             }).join("")}
@@ -135,26 +145,44 @@
     tableWrap.addEventListener("click", async (e) => {
       const btn = e.target.closest("button");
       if (!btn) return;
-      const id = btn.getAttribute("data-checkin");
-      if (!id) return;
 
-      msg.textContent = "Saving…";
-      const { error } = await supabase
-        .from("trucks")
-        .update({ status: "Checked In", last_updated: new Date().toISOString() })
-        .eq("id", id);
+      const checkId = btn.getAttribute("data-checkin");
+      const undoId = btn.getAttribute("data-undo");
 
-      if (error){
-        msg.textContent = `Save error: ${error.message}`;
+      if (checkId) {
+        msg.textContent = "Saving…";
+        const { error } = await supabase
+          .from("trucks")
+          .update({ status: "Checked In", last_updated: new Date().toISOString() })
+          .eq("id", checkId);
+
+        if (error){
+          msg.textContent = `Save error: ${error.message}`;
+          return;
+        }
+        msg.textContent = "Checked in.";
+        await loadRows();
         return;
       }
-      msg.textContent = "Checked in.";
-      await loadRows();
+
+      if (undoId) {
+        msg.textContent = "Undoing…";
+        const { error } = await supabase
+          .from("trucks")
+          .update({ status: "Queue", last_updated: new Date().toISOString() })
+          .eq("id", undoId);
+
+        if (error){
+          msg.textContent = `Undo error: ${error.message}`;
+          return;
+        }
+        msg.textContent = "Restored to Queue.";
+        await loadRows();
+      }
     });
 
     loadRows();
-    // Optional: auto-refresh every 20 seconds
-    setInterval(loadRows, 20000);
+    setInterval(loadRows, 20000); // auto refresh
   </script>
 </body>
 </html>
