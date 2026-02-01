@@ -1,541 +1,386 @@
+const ADMIN_PIN = "2026";
 <!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Ledger Intake (Admin)</title>
-
   <style>
-    body { font-family: system-ui, -apple-system, Arial; padding: 16px; }
-    h1 { margin: 0 0 8px; }
-    h2 { margin: 18px 0 8px; }
-    .note { color:#555; font-size:14px; margin: 0 0 14px; line-height: 1.35; }
-    .muted { color:#666; font-size:13px; }
-    label { font-weight:600; display:block; margin-top:14px; }
-    input, select, button { width:100%; padding:12px; font-size:16px; margin-top:6px; box-sizing: border-box; }
-    button { cursor:pointer; }
-    .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-    .msg { margin-top:12px; font-weight:600; }
-    table { width:100%; border-collapse:collapse; margin-top:12px; }
-    th, td { border:1px solid #ddd; padding:10px; font-size:14px; vertical-align: top; }
-    th { background:#f5f5f5; text-align:left; }
-    .btns { display:flex; gap:8px; flex-wrap: wrap; }
-    .btns button { width:auto; padding:8px 10px; font-size:14px; }
-    .toolbar { display:flex; align-items:center; gap:10px; margin: 14px 0 6px; }
-    .toolbar input[type="checkbox"] { width:auto; margin:0; transform: scale(1.2); }
-    .pill { display:inline-block; padding:4px 10px; border-radius:999px; border:1px solid #ddd; font-size:12px; }
-    .pill.queue { background:#fff; }
-    .pill.arch { background:#fff5f5; border-color:#f2b8b5; }
-    .danger { border:1px solid #f2b8b5; background:#fff5f5; padding:10px; border-radius:10px; margin-top:10px; }
-    .good { border:1px solid #b7e1c0; background:#f3fff6; padding:10px; border-radius:10px; margin-top:10px; }
-    .smallbtn { width:auto; padding:8px 10px; font-size:14px; }
-    .scanGrid { display:grid; grid-template-columns:1fr; gap:10px; }
-    .scanActions { display:flex; gap:10px; flex-wrap: wrap; }
-    .scanActions button { width:auto; }
-    .reviewRow { display:grid; grid-template-columns: 130px 1fr 110px 90px; gap:10px; align-items:center; margin-top:8px; }
-    .reviewRow input { margin-top:0; }
-    .reviewHead { display:grid; grid-template-columns: 130px 1fr 110px 90px; gap:10px; font-weight:700; margin-top:10px; }
-    .hr { height:1px; background:#eee; margin:18px 0; }
+    body { font-family: -apple-system, system-ui, Arial; padding: 14px; max-width: 1100px; margin: 0 auto; }
+    h1 { margin: 0 0 10px; }
+    .muted { color:#666; font-size: 13px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    label { display: block; font-size: 14px; margin: 10px 0 6px; }
+    input, select, button { width: 100%; font-size: 16px; padding: 10px; box-sizing: border-box; }
+    button { cursor: pointer; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+    .actions3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px; }
+    .msg { margin: 10px 0; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { border: 1px solid #ddd; padding: 8px; font-size: 14px; vertical-align: top; }
+    th { background: #f5f5f5; text-align: left; }
+    .pill { display:inline-block; padding:3px 8px; border-radius:999px; font-size:12px; border:1px solid #ddd; }
+    .topbar { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
+    .topbar > * { flex: 0 0 auto; }
+    .topbar button { width:auto; }
+    .right { margin-left:auto; }
+    .danger { border:1px solid #f2b8b5; background:#fff5f5; padding:10px; border-radius:10px; }
+    .ok { border:1px solid #bde5c8; background:#f4fff7; padding:10px; border-radius:10px; }
+    .small { font-size: 12px; }
   </style>
 </head>
-
 <body>
-<h1>Ledger Intake (Admin)</h1>
-
-<div class="note">
-  Admin creates & edits POs. Admin always saves status as <b>Queue</b>.
-  Officers mark <b>Checked In</b> on the Officer Board.
-  <br>
-  Door rule (for display): If Ledger Door blank → Grocery 56, Produce/Dairy 93, Meat/Frozen 132.
-  <br>
-  <span class="muted">Recommended scanner settings for ledger OCR: <b>300 DPI</b>, grayscale, deskew ON, high contrast, save as JPG/PNG if possible.</span>
-</div>
-
-<form id="form">
-  <label>PO Number (5 digits)</label>
-  <input id="po" maxlength="5" inputmode="numeric" required />
-
-  <div class="row">
-    <div>
-      <label>Carrier</label>
-      <input id="carrier" />
-    </div>
-    <div>
-      <label>Shipper</label>
-      <input id="shipper" />
-    </div>
+  <h1>Ledger Intake (Admin)</h1>
+  <div class="muted">
+    Admin creates/updates POs. Status stays <b>Queue</b> until officers check in.<br/>
+    Door rules: If ledger door is blank → Grocery→56, Produce/Dairy→93, Meat/Frozen→132.
   </div>
 
-  <label>Department</label>
-  <select id="department" required>
-    <option value="">Select department</option>
-    <option>Grocery</option>
-    <option>Produce/Dairy</option>
-    <option>Meat/Frozen</option>
-  </select>
+  <div class="danger" style="margin-top:12px;">
+    <b>Admin PIN required.</b> Officers should use: <code>/board.html</code>
+  </div>
 
-  <label>Ledger Door (optional)</label>
-  <input id="ledger_door" placeholder="Leave blank if not assigned" />
+  <div class="topbar" style="margin-top:12px;">
+    <button id="refreshBtn">Refresh</button>
+    <button id="exportBtn">Export CSV (Leadership)</button>
+    <button id="archiveBtn">Archive Checked-In (8 hrs)</button>
 
-  <label>Notes (optional)</label>
-  <input id="notes" />
+    <label class="small" style="display:flex; align-items:center; gap:8px; margin:0;">
+      <input id="showArchived" type="checkbox" style="width:auto; transform:scale(1.2);" />
+      Show archived
+    </label>
 
-  <button type="submit">Save / Update</button>
-</form>
+    <div class="right muted small">Officer link: <a href="./board.html" target="_blank">board.html</a></div>
+  </div>
 
-<div class="msg" id="msg"></div>
+  <p class="msg" id="msg"></p>
 
-<div class="toolbar">
-  <label style="margin:0; font-weight:600;">Search PO</label>
-  <input id="search" placeholder="Type PO digits…" inputmode="numeric" maxlength="5" style="flex:1; margin-top:0;" />
-</div>
+  <form id="form" class="ok">
+    <label>PO Number (exactly 5 digits)*</label>
+    <input id="po" maxlength="5" inputmode="numeric" placeholder="12345" required />
 
-<div class="toolbar">
-  <input type="checkbox" id="showArchived" />
-  <label for="showArchived" style="margin:0; font-weight:600;">Show Archived</label>
-</div>
+    <div class="row">
+      <div>
+        <label>Carrier</label>
+        <input id="carrier" placeholder="e.g., Swift" />
+      </div>
+      <div>
+        <label>Shipper</label>
+        <input id="shipper" placeholder="e.g., Vendor name" />
+      </div>
+    </div>
 
-<div id="tableWrap"></div>
-
-<div class="hr"></div>
-
-<!-- PHASE 4: LEDGER SCAN MODULE -->
-<h2>Ledger Scan (Admin)</h2>
-
-<div class="note">
-  Upload scanned ledger page images → OCR finds 5-digit POs → you review → Import creates/updates rows as <b>Queue</b>.
-  <div class="muted">Tip: scan 1 page per image at 300 DPI if possible.</div>
-</div>
-
-<div class="scanGrid">
-  <div>
-    <label>Ledger Department for this scan batch</label>
-    <select id="ledgerDept">
+    <label>Department*</label>
+    <select id="department" required>
+      <option value="">Select department</option>
       <option>Grocery</option>
       <option>Produce/Dairy</option>
       <option>Meat/Frozen</option>
     </select>
-  </div>
 
-  <div class="scanActions">
-    <button type="button" class="smallbtn" id="scanLedgerBtn">Upload Ledger Image(s)</button>
-    <button type="button" class="smallbtn" id="clearDetectedBtn" style="display:none;">Clear Detected</button>
-    <button type="button" class="smallbtn" id="importDetectedBtn" style="display:none;">Import Detected Rows</button>
-  </div>
+    <label>Ledger Door (optional)</label>
+    <input id="ledgerDoor" placeholder="From warehouse ledger (may be blank)" />
 
-  <input id="ledgerFiles" type="file" accept="image/*" multiple style="display:none;" />
-  <div class="msg" id="ledgerMsg"></div>
+    <label>Notes (optional)</label>
+    <input id="notes" placeholder="Short note for officers (optional)" />
 
-  <div id="previewWrap"></div>
-</div>
+    <div class="actions">
+      <button type="submit">Save / Update (Queue)</button>
+      <button type="button" id="clearBtn">Clear</button>
+    </div>
+  </form>
 
-<script type="module">
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import Tesseract from "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.esm.min.js";
+  <label style="margin-top:14px;">Search PO</label>
+  <input id="search" maxlength="5" inputmode="numeric" placeholder="Type PO digits…" />
 
-const supabase = createClient(
-  "https://pxiigthkswhnivanndfn.supabase.co",
-  "sb_publishable_fWVXeZM0mcylqczc6DWztA_Fu63kfj0"
-);
+  <div id="tableWrap"></div>
 
-const form = document.getElementById("form");
-const tableWrap = document.getElementById("tableWrap");
-const msg = document.getElementById("msg");
-const search = document.getElementById("search");
-const showArchived = document.getElementById("showArchived");
+  <script type="module">
+    // ====== ADMIN PIN (change this) ======
+    const ADMIN_PIN = "1234"; // <-- CHANGE ME
 
-// Inputs
-const po = document.getElementById("po");
-const carrier = document.getElementById("carrier");
-const shipper = document.getElementById("shipper");
-const department = document.getElementById("department");
-const ledger_door = document.getElementById("ledger_door");
-const notes = document.getElementById("notes");
+    // ====== Supabase ======
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+    const SUPABASE_URL = "https://pxiigthkswhnivanndfn.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_fWVXeZM0mcylqczc6DWztA_Fu63kfj0";
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-let rows = [];
-
-function isFiveDigits(v) {
-  return /^\d{5}$/.test(String(v || "").trim());
-}
-
-function autoDoor(dept) {
-  if (dept === "Grocery") return "56";
-  if (dept === "Produce/Dairy") return "93";
-  if (dept === "Meat/Frozen") return "132";
-  return "";
-}
-
-function doorForRow(r) {
-  const ld = (r.ledger_door ?? "").toString().trim();
-  return ld ? ld : autoDoor(r.department);
-}
-
-function statusPill(r) {
-  const isArchived = !!r.archived;
-  if (isArchived) return `<span class="pill arch">Archived</span>`;
-  return `<span class="pill queue">Queue</span>`;
-}
-
-async function loadRows() {
-  msg.textContent = "Loading…";
-
-  const wantArchived = showArchived.checked;
-
-  let query = supabase
-    .from("trucks")
-    .select("po_number, department, ledger_door, carrier, shipper, notes, status, last_updated, archived")
-    .order("last_updated", { ascending:false });
-
-  if (!wantArchived) query = query.eq("archived", false);
-
-  const { data, error } = await query;
-
-  if (error) {
-    msg.textContent = `Load error: ${error.message}`;
-    rows = [];
-    render();
-    return;
-  }
-
-  msg.textContent = "";
-  rows = data || [];
-  render();
-}
-
-function render() {
-  const q = search.value.trim();
-  const view = q ? rows.filter(r => String(r.po_number || "").includes(q)) : rows;
-
-  if (!view.length) {
-    tableWrap.innerHTML = "<p class='muted'>No records</p>";
-    return;
-  }
-
-  tableWrap.innerHTML = `
-    <table>
-      <thead>
-        <tr>
-          <th style="width:110px;">PO</th>
-          <th style="width:140px;">Dept</th>
-          <th style="width:120px;">Door</th>
-          <th style="width:120px;">Status</th>
-          <th>Notes</th>
-          <th style="width:240px;">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${view.map(r => {
-          const updated = r.last_updated ? new Date(r.last_updated).toLocaleString() : "";
-          const isArchived = !!r.archived;
-          return `
-            <tr>
-              <td><b>${r.po_number || ""}</b><div class="muted">${updated}</div></td>
-              <td>${r.department || ""}${isArchived ? " <span class='muted'>(Archived)</span>" : ""}</td>
-              <td><b>${doorForRow(r) || "—"}</b></td>
-              <td>${statusPill(r)}</td>
-              <td>${r.notes || ""}</td>
-              <td>
-                <div class="btns">
-                  <button data-edit="${r.po_number}">Edit</button>
-                  ${
-                    isArchived
-                      ? `<button data-restore="${r.po_number}">Restore</button>`
-                      : `<button data-archive="${r.po_number}">Archive</button>`
-                  }
-                </div>
-              </td>
-            </tr>
-          `;
-        }).join("")}
-      </tbody>
-    </table>
-  `;
-}
-
-// Save / Update (Admin ALWAYS writes Queue)
-form.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  msg.textContent = "";
-
-  const poVal = po.value.trim();
-  if (!isFiveDigits(poVal)) return (msg.textContent = "PO must be exactly 5 digits.");
-  if (!department.value) return (msg.textContent = "Department is required.");
-
-  const record = {
-    po_number: poVal,
-    carrier: carrier.value.trim() || null,
-    shipper: shipper.value.trim() || null,
-    department: department.value,
-    ledger_door: ledger_door.value.trim() || null,
-    notes: notes.value.trim() || null,
-
-    status: "Queue",      // Admin forces Queue
-    archived: false,      // Re-entering a PO restores it
-
-    last_updated: new Date().toISOString()
-  };
-
-  msg.textContent = "Saving…";
-  const { error } = await supabase
-    .from("trucks")
-    .upsert(record, { onConflict:"po_number" });
-
-  if (error) return (msg.textContent = `Save error: ${error.message}`);
-
-  msg.textContent = "Saved (Queue).";
-  form.reset();
-  await loadRows();
-});
-
-search.addEventListener("input", render);
-showArchived.addEventListener("change", loadRows);
-
-// Edit + Archive + Restore
-tableWrap.addEventListener("click", async (e) => {
-  const editBtn = e.target.closest("button[data-edit]");
-  const archiveBtn = e.target.closest("button[data-archive]");
-  const restoreBtn = e.target.closest("button[data-restore]");
-
-  if (editBtn) {
-    const poNum = editBtn.dataset.edit;
-    const r = rows.find(x => String(x.po_number) === String(poNum));
-    if (!r) return;
-
-    po.value = r.po_number || "";
-    carrier.value = r.carrier || "";
-    shipper.value = r.shipper || "";
-    department.value = r.department || "";
-    ledger_door.value = r.ledger_door || "";
-    notes.value = r.notes || "";
-    msg.textContent = "Loaded for editing. Update fields → Save/Update.";
-    return;
-  }
-
-  if (archiveBtn) {
-    const poNum = archiveBtn.dataset.archive;
-    const ok = confirm(`Archive PO ${poNum}?`);
-    if (!ok) return;
-
-    msg.textContent = `Archiving PO ${poNum}…`;
-    const { error } = await supabase
-      .from("trucks")
-      .update({ archived: true, last_updated: new Date().toISOString() })
-      .eq("po_number", poNum);
-
-    if (error) return (msg.textContent = `Archive failed: ${error.message}`);
-
-    msg.textContent = `Archived PO ${poNum}.`;
-    await loadRows();
-    return;
-  }
-
-  if (restoreBtn) {
-    const poNum = restoreBtn.dataset.restore;
-    const ok = confirm(`Restore PO ${poNum}?`);
-    if (!ok) return;
-
-    msg.textContent = `Restoring PO ${poNum}…`;
-    const { error } = await supabase
-      .from("trucks")
-      .update({ archived: false, last_updated: new Date().toISOString() })
-      .eq("po_number", poNum);
-
-    if (error) return (msg.textContent = `Restore failed: ${error.message}`);
-
-    msg.textContent = `Restored PO ${poNum}.`;
-    await loadRows();
-  }
-});
-
-/* ------------------------------
-   PHASE 4B: LEDGER SCAN MODULE
---------------------------------*/
-const ledgerDept = document.getElementById("ledgerDept");
-const scanLedgerBtn = document.getElementById("scanLedgerBtn");
-const ledgerFiles = document.getElementById("ledgerFiles");
-const ledgerMsg = document.getElementById("ledgerMsg");
-const previewWrap = document.getElementById("previewWrap");
-const importDetectedBtn = document.getElementById("importDetectedBtn");
-const clearDetectedBtn = document.getElementById("clearDetectedBtn");
-
-let detected = []; // {po_number, department, ledger_door, notes, keep}
-
-scanLedgerBtn.addEventListener("click", () => ledgerFiles.click());
-
-function unique(arr) { return Array.from(new Set(arr)); }
-
-// Conservative PO extraction: any standalone 5 digits
-function extractPOs(text) {
-  return unique((text.match(/\b\d{5}\b/g) || []));
-}
-
-// OPTIONAL / conservative door guess: only if literal "door" is present near a 1-3 digit number.
-// This is intentionally conservative to avoid bad doors.
-function extractDoorCandidates(text) {
-  const doors = [];
-  const re = /door\s*[:#-]?\s*(\d{1,3})/gi;
-  let m;
-  while ((m = re.exec(text)) !== null) doors.push(m[1]);
-  return unique(doors);
-}
-
-async function ocrFile(file, idx, total) {
-  ledgerMsg.textContent = `Scanning ledger image ${idx + 1}/${total}…`;
-  const { data } = await Tesseract.recognize(file, "eng", {
-    logger: (m) => {
-      if (m.status === "recognizing text") {
-        ledgerMsg.textContent = `Scanning ledger image ${idx + 1}/${total}… ${Math.round((m.progress || 0) * 100)}%`;
+    // ====== PIN gate (UI-only) ======
+    if (sessionStorage.getItem("admin_ok") !== "1") {
+      const entered = prompt("Admin PIN:");
+      if (entered !== ADMIN_PIN) {
+        alert("Wrong PIN. Opening Officer Board instead.");
+        location.href = "./board.html";
+      } else {
+        sessionStorage.setItem("admin_ok", "1");
       }
     }
-  });
-  return data.text || "";
-}
 
-function renderDetected() {
-  if (!detected.length) {
-    previewWrap.innerHTML = `<p class="muted">No detected rows yet.</p>`;
-    importDetectedBtn.style.display = "none";
-    clearDetectedBtn.style.display = "none";
-    return;
-  }
+    // ====== Elements ======
+    const msg = document.getElementById("msg");
+    const form = document.getElementById("form");
+    const tableWrap = document.getElementById("tableWrap");
+    const refreshBtn = document.getElementById("refreshBtn");
+    const exportBtn = document.getElementById("exportBtn");
+    const archiveBtn = document.getElementById("archiveBtn");
+    const showArchived = document.getElementById("showArchived");
+    const clearBtn = document.getElementById("clearBtn");
+    const search = document.getElementById("search");
 
-  const kept = detected.filter(d => d.keep);
+    const po = document.getElementById("po");
+    const carrier = document.getElementById("carrier");
+    const shipper = document.getElementById("shipper");
+    const department = document.getElementById("department");
+    const ledgerDoor = document.getElementById("ledgerDoor");
+    const notes = document.getElementById("notes");
 
-  previewWrap.innerHTML = `
-    <div class="good">
-      <b>Detected:</b> ${detected.length} POs • <b>Ready to import:</b> ${kept.length}
-      <div class="muted">Uncheck any PO you don’t want imported. You can type a ledger door if it’s clearly assigned.</div>
-    </div>
+    let lastRows = [];
 
-    <div class="reviewHead">
-      <div>PO</div>
-      <div>Department</div>
-      <div>Ledger Door</div>
-      <div>Keep</div>
-    </div>
+    function isFiveDigits(v){ return /^[0-9]{5}$/.test(v); }
+    function pill(t){ return `<span class="pill">${t}</span>`; }
 
-    ${detected.map((d, i) => `
-      <div class="reviewRow" data-i="${i}">
-        <div><b>${d.po_number}</b></div>
-        <div>${d.department}</div>
-        <div><input class="doorIn" placeholder="(blank)" value="${d.ledger_door || ""}" /></div>
-        <div><input class="keepIn" type="checkbox" ${d.keep ? "checked" : ""} /></div>
-      </div>
-    `).join("")}
-  `;
-
-  importDetectedBtn.style.display = kept.length ? "inline-block" : "none";
-  clearDetectedBtn.style.display = "inline-block";
-}
-
-previewWrap.addEventListener("input", (e) => {
-  const row = e.target.closest(".reviewRow");
-  if (!row) return;
-  const i = Number(row.dataset.i);
-  if (!Number.isFinite(i) || !detected[i]) return;
-
-  if (e.target.classList.contains("doorIn")) {
-    const v = e.target.value.trim();
-    detected[i].ledger_door = v || null;
-  }
-
-  if (e.target.classList.contains("keepIn")) {
-    detected[i].keep = !!e.target.checked;
-    renderDetected(); // update counts + import button visibility
-  }
-});
-
-ledgerFiles.addEventListener("change", async () => {
-  const files = Array.from(ledgerFiles.files || []);
-  if (!files.length) return;
-
-  detected = [];
-  previewWrap.innerHTML = "";
-  importDetectedBtn.style.display = "none";
-  clearDetectedBtn.style.display = "none";
-
-  const dept = ledgerDept.value;
-
-  for (let i = 0; i < files.length; i++) {
-    const text = await ocrFile(files[i], i, files.length);
-
-    const pos = extractPOs(text);
-
-    // Door candidates are unreliable; we keep blank by default.
-    // If the scan clearly contains "door 12" etc, you can still type it during review.
-    // (If you later want auto-matching per-line, we can refine.)
-    // const doorHints = extractDoorCandidates(text);
-
-    for (const poNum of pos) {
-      detected.push({
-        po_number: poNum,
-        department: dept,
-        ledger_door: null,
-        notes: null,
-        keep: true
-      });
+    function defaultDoorForDept(dept){
+      if (dept === "Grocery") return "56";
+      if (dept === "Produce/Dairy") return "93";
+      if (dept === "Meat/Frozen") return "132";
+      return "";
     }
-  }
 
-  // De-dupe by PO (keep first)
-  const map = new Map();
-  for (const d of detected) if (!map.has(d.po_number)) map.set(d.po_number, d);
-  detected = Array.from(map.values());
-
-  ledgerMsg.textContent = detected.length
-    ? "Review the detected POs below. Uncheck any that are wrong. Then Import."
-    : "No 5-digit POs detected. Try a clearer scan (300 DPI, deskew ON, higher contrast).";
-
-  renderDetected();
-  ledgerFiles.value = "";
-});
-
-clearDetectedBtn.addEventListener("click", () => {
-  detected = [];
-  ledgerMsg.textContent = "";
-  renderDetected();
-});
-
-importDetectedBtn.addEventListener("click", async () => {
-  const toImport = detected.filter(d => d.keep);
-  if (!toImport.length) return;
-
-  ledgerMsg.textContent = "Importing…";
-
-  // Build records for upsert (Admin rules: Queue + not archived)
-  const records = toImport.map(d => ({
-    po_number: d.po_number,
-    department: d.department,
-    ledger_door: d.ledger_door,
-    status: "Queue",
-    archived: false,
-    last_updated: new Date().toISOString()
-  }));
-
-  // Chunk upserts so it doesn't blow request size limits
-  const chunkSize = 100;
-  for (let i = 0; i < records.length; i += chunkSize) {
-    const chunk = records.slice(i, i + chunkSize);
-    const { error } = await supabase
-      .from("trucks")
-      .upsert(chunk, { onConflict: "po_number" });
-
-    if (error) {
-      ledgerMsg.textContent = `Import failed: ${error.message}`;
-      return;
+    function instructionDoor(r){
+      // ledger door wins; else default by dept
+      return (r.ledger_door || "").trim() || defaultDoorForDept(r.department);
     }
-  }
 
-  ledgerMsg.textContent = `Imported ${records.length} rows (Queue).`;
-  detected = [];
-  renderDetected();
-  await loadRows();
-});
+    function instructionText(r){
+      const d = instructionDoor(r);
+      return d ? `Check in at Door ${d}` : "Check in (door not set)";
+    }
 
-/* initial load */
-loadRows();
-renderDetected();
-</script>
+    function render(rows){
+      const q = (search.value || "").trim();
+      const view = q ? rows.filter(r => String(r.po_number || "").includes(q)) : rows;
+
+      if (!view.length){
+        tableWrap.innerHTML = `<p class="muted">No rows.</p>`;
+        return;
+      }
+
+      tableWrap.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>PO</th>
+              <th>Carrier</th>
+              <th>Shipper</th>
+              <th>Dept</th>
+              <th>Status</th>
+              <th>Ledger Door</th>
+              <th>Instruction</th>
+              <th>Updated</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${view.map(r => {
+              const updated = r.last_updated ? new Date(r.last_updated).toLocaleString() : "";
+              return `
+                <tr>
+                  <td><b>${r.po_number || ""}</b></td>
+                  <td>${r.carrier || ""}</td>
+                  <td>${r.shipper || ""}</td>
+                  <td>${r.department || ""}</td>
+                  <td>${pill(r.status || "")}</td>
+                  <td>${r.ledger_door || ""}</td>
+                  <td>${instructionText(r)}</td>
+                  <td>${updated}</td>
+                  <td style="min-width:170px;">
+                    <button data-edit="${r.id}">Edit</button>
+                    <button data-del="${r.id}">Delete</button>
+                    ${r.archived ? `<button data-restore="${r.id}">Restore</button>` : ``}
+                  </td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function loadRows(){
+      msg.textContent = "Loading…";
+
+      const includeArchived = showArchived.checked;
+      let q = supabase
+        .from("trucks")
+        .select("*")
+        .order("last_updated", { ascending: false });
+
+      if (!includeArchived) q = q.eq("archived", false);
+
+      const { data, error } = await q;
+      if (error){
+        msg.textContent = `Load error: ${error.message}`;
+        return;
+      }
+      msg.textContent = "";
+      lastRows = data || [];
+      render(lastRows);
+    }
+
+    function clearForm(){
+      po.value = "";
+      carrier.value = "";
+      shipper.value = "";
+      department.value = "";
+      ledgerDoor.value = "";
+      notes.value = "";
+      msg.textContent = "";
+    }
+
+    // Save/Update (status forced to Queue)
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      msg.textContent = "";
+
+      const poVal = po.value.trim();
+      if (!isFiveDigits(poVal)) return (msg.textContent = "PO must be exactly 5 digits.");
+      if (!department.value) return (msg.textContent = "Department is required.");
+
+      msg.textContent = "Saving…";
+
+      const payload = {
+        po_number: poVal,
+        carrier: carrier.value.trim() || null,
+        shipper: shipper.value.trim() || null,
+        department: department.value,
+        ledger_door: ledgerDoor.value.trim() || null,
+        notes: notes.value.trim() || null,
+        status: "Queue",
+        archived: false,
+        archived_at: null,
+        last_updated: new Date().toISOString(),
+      };
+
+      // Upsert by PO: update if exists, else insert
+      const existing = lastRows.find(r => r.po_number === poVal && !r.archived);
+      let res;
+      if (existing) {
+        res = await supabase.from("trucks").update(payload).eq("id", existing.id);
+      } else {
+        res = await supabase.from("trucks").insert([payload]);
+      }
+
+      if (res.error){
+        msg.textContent = `Save error: ${res.error.message}`;
+        return;
+      }
+
+      msg.textContent = "Saved.";
+      clearForm();
+      await loadRows();
+    });
+
+    // Search
+    search.addEventListener("input", () => render(lastRows));
+
+    // Buttons
+    refreshBtn.addEventListener("click", loadRows);
+    clearBtn.addEventListener("click", clearForm);
+    showArchived.addEventListener("change", loadRows);
+
+    // Archive (8 hours)
+    archiveBtn.addEventListener("click", async () => {
+      msg.textContent = "Archiving…";
+      const { error } = await supabase.rpc("archive_old_trucks", { hours_old: 8 });
+      if (error) return (msg.textContent = `Archive error: ${error.message}`);
+      msg.textContent = "Archived old Checked-In rows.";
+      await loadRows();
+    });
+
+    // Export CSV (Leadership)
+    exportBtn.addEventListener("click", () => {
+      const rows = lastRows.slice(); // current view loaded
+      const headers = [
+        "po_number","carrier","shipper","department","ledger_door","instruction_door","status",
+        "last_updated","archived","archived_at","notes"
+      ];
+
+      const csv = [
+        headers.join(","),
+        ...rows.map(r => {
+          const instruction_door = instructionDoor(r);
+          const vals = [
+            r.po_number,
+            r.carrier || "",
+            r.shipper || "",
+            r.department || "",
+            r.ledger_door || "",
+            instruction_door || "",
+            r.status || "",
+            r.last_updated || "",
+            String(!!r.archived),
+            r.archived_at || "",
+            (r.notes || "").replaceAll('"','""')
+          ].map(v => `"${String(v ?? "").replaceAll('"','""')}"`);
+          return vals.join(",");
+        })
+      ].join("\n");
+
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      const date = new Date().toISOString().slice(0,10);
+      a.href = URL.createObjectURL(blob);
+      a.download = `pwadc_ledger_report_${date}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      msg.textContent = "CSV downloaded.";
+    });
+
+    // Table actions: edit/delete/restore
+    tableWrap.addEventListener("click", async (e) => {
+      const btn = e.target.closest("button");
+      if (!btn) return;
+
+      const editId = btn.getAttribute("data-edit");
+      const delId = btn.getAttribute("data-del");
+      const restoreId = btn.getAttribute("data-restore");
+
+      if (editId) {
+        const r = lastRows.find(x => String(x.id) === String(editId));
+        if (!r) return;
+        po.value = r.po_number || "";
+        carrier.value = r.carrier || "";
+        shipper.value = r.shipper || "";
+        department.value = r.department || "";
+        ledgerDoor.value = r.ledger_door || "";
+        notes.value = r.notes || "";
+        msg.textContent = "Loaded row for editing.";
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+
+      if (delId) {
+        if (!confirm("Delete this row?")) return;
+        msg.textContent = "Deleting…";
+        const { error } = await supabase.from("trucks").delete().eq("id", delId);
+        if (error) return (msg.textContent = `Delete error: ${error.message}`);
+        msg.textContent = "Deleted.";
+        await loadRows();
+      }
+
+      if (restoreId) {
+        msg.textContent = "Restoring…";
+        const { error } = await supabase
+          .from("trucks")
+          .update({ archived: false, archived_at: null, last_updated: new Date().toISOString(), status: "Queue" })
+          .eq("id", restoreId);
+        if (error) return (msg.textContent = `Restore error: ${error.message}`);
+        msg.textContent = "Restored.";
+        await loadRows();
+      }
+    });
+
+    // Initial load
+    loadRows();
+  </script>
 </body>
 </html>
-const ADMIN_PIN = "2026";
