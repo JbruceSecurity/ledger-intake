@@ -5,49 +5,76 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Ledger Intake (Admin)</title>
 
-  <!-- Shared styles -->
   <link rel="stylesheet" href="./styles.css">
 </head>
 
 <body>
   <h1>Ledger Intake (Admin)</h1>
-  <p class="muted">Security intake — live view shared with officers</p>
+  <p class="muted">
+    Security intake. If no ledger door is assigned, drivers follow posted
+    department check-in doors.
+  </p>
 
-  <!-- Intake form -->
+  <!-- INTAKE FORM -->
   <form id="form">
+
     <label>PO Number (5 digits)</label>
-    <input id="po" maxlength="5" inputmode="numeric" required />
+    <input
+      id="po"
+      maxlength="5"
+      inputmode="numeric"
+      placeholder="12345"
+      required
+    />
 
     <div class="row">
       <div>
         <label>Carrier</label>
-        <input id="carrier" />
+        <input id="carrier" placeholder="e.g. Swift" />
       </div>
       <div>
         <label>Shipper</label>
-        <input id="shipper" />
+        <input id="shipper" placeholder="Vendor name" />
       </div>
     </div>
 
-    <label>Ledger Door (optional)</label>
-    <input id="ledgerDoor" placeholder="From warehouse ledger (may change)" />
+    <!-- DEPARTMENT (REQUIRED) -->
+    <label>Department</label>
+    <select id="department" required>
+      <option value="">Select department</option>
+      <option>Grocery</option>
+      <option>Produce</option>
+      <option>Meat Frozen</option>
+    </select>
 
+    <!-- LEDGER DOOR -->
+    <label>Ledger Door (optional)</label>
+    <input
+      id="ledgerDoor"
+      placeholder="From warehouse ledger (may be blank)"
+    />
+
+    <!-- STATUS (ONLY TWO) -->
     <label>Status</label>
     <select id="status">
       <option>Queue</option>
       <option>Checked In</option>
     </select>
 
+    <!-- NOTES -->
     <label>Notes (optional)</label>
-    <input id="notes" placeholder="Short note for officers" />
+    <input
+      id="notes"
+      placeholder="Short note for officers (optional)"
+    />
 
     <button type="submit">Save / Update</button>
   </form>
 
-  <!-- Status message -->
+  <!-- MESSAGE -->
   <p id="msg" class="muted"></p>
 
-  <!-- Search -->
+  <!-- SEARCH -->
   <label>Search PO</label>
   <input
     id="search"
@@ -56,10 +83,10 @@
     placeholder="Type PO digits…"
   />
 
-  <!-- Results table -->
+  <!-- TABLE -->
   <div id="tableWrap"></div>
 
-  <!-- Admin logic (Supabase + PIN) -->
+  <!-- ADMIN LOGIC -->
   <script type="module" src="./app.js"></script>
 </body>
 </html>
