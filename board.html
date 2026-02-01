@@ -8,7 +8,7 @@
     body { font-family: system-ui, -apple-system, Arial; padding: 16px; }
     h1 { margin: 0 0 6px; }
     .note { color:#555; font-size:14px; margin-bottom:14px; line-height: 1.35; }
-    .row { display:grid; grid-template-columns:1fr auto; gap:10px; }
+    .row { display:grid; grid-template-columns:1fr auto auto; gap:10px; }
     input, button { padding:12px; font-size:16px; box-sizing: border-box; }
     input { width:100%; }
     button { cursor:pointer; }
@@ -28,17 +28,20 @@
 <body>
   <h1>Officer Board</h1>
   <div class="note">
-    Search PO → follow instruction → tap <b>Checked In</b> after driver checks in.
+    Scan BOL → PO autofills → follow instruction → tap <b>Checked In</b>.
     <br>
-    If Ledger Door is blank: Grocery → 56, Produce/Dairy → 93, Meat/Frozen → 132.
+    If Ledger Door blank: Grocery → 56, Produce/Dairy → 93, Meat/Frozen → 132.
     <br>
     <span class="muted">Archived rows are hidden.</span>
   </div>
 
   <div class="row">
     <input id="search" placeholder="Search PO (5 digits)…" inputmode="numeric" maxlength="5" />
+    <button id="scanBtn">Scan BOL</button>
     <button id="refresh">Refresh</button>
   </div>
+
+  <input id="bolFile" type="file" accept="image/*" capture="environment" style="display:none;" />
 
   <div class="msg" id="msg"></div>
 
@@ -46,6 +49,7 @@
 
 <script type="module">
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+import Tesseract from "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.esm.min.js";
 
 const supabase = createClient(
   "https://pxiigthkswhnivanndfn.supabase.co",
@@ -56,6 +60,9 @@ const msg = document.getElementById("msg");
 const tableWrap = document.getElementById("tableWrap");
 const search = document.getElementById("search");
 const refreshBtn = document.getElementById("refresh");
+
+const scanBtn = document.getElementById("scanBtn");
+const bolFile = document.getElementById("bolFile");
 
 let rows = [];
 
@@ -150,6 +157,60 @@ function render() {
   `;
 }
 
+/* --------- OCR: Scan BOL -> find PO --------- */
+function extractFiveDigitPOs(text) {
+  const matches = text.match(/\b\d{5}\b/g) || [];
+  return Array.from(new Set(matches));
+}
+
+async function ocrFile(file) {
+  msg.textContent = "Scanning BOL…";
+  const { data } = await Tesseract.recognize(file, "eng", {
+    logger: (m) => {
+      if (m.status === "recognizing text") {
+        msg.textContent = `Scanning BOL… ${Math.round((m.progress || 0) * 100)}%`;
+      }
+    }
+  });
+  return data.text || "";
+}
+
+scanBtn.addEventListener("click", () => bolFile.click());
+
+bolFile.addEventListener("change", async () => {
+  const file = bolFile.files?.[0];
+  if (!file) return;
+
+  try {
+    const text = await ocrFile(file);
+    const candidates = extractFiveDigitPOs(text);
+
+    if (!candidates.length) {
+      msg.textContent = "No 5-digit PO found. Take a clearer photo (zoom to PO area, avoid glare).";
+      return;
+    }
+
+    let chosen = candidates[0];
+    if (candidates.length > 1) {
+      const pick = prompt(`Multiple 5-digit numbers found:\n${candidates.join(", ")}\n\nType the correct PO:`);
+      if (pick && /^\d{5}$/.test(pick.trim())) chosen = pick.trim();
+      else {
+        msg.textContent = "No PO selected.";
+        return;
+      }
+    }
+
+    search.value = chosen;
+    render();
+    msg.textContent = `PO detected: ${chosen}`;
+  } catch (err) {
+    msg.textContent = `Scan failed: ${err?.message || err}`;
+  } finally {
+    bolFile.value = "";
+  }
+});
+
+/* --------- Officer action: Checked In --------- */
 search.addEventListener("input", render);
 refreshBtn.addEventListener("click", loadRows);
 
@@ -164,10 +225,7 @@ tableWrap.addEventListener("click", async (e) => {
 
   const { error } = await supabase
     .from("trucks")
-    .update({
-      status: "Checked In",
-      last_updated: new Date().toISOString()
-    })
+    .update({ status: "Checked In", last_updated: new Date().toISOString() })
     .eq("po_number", po);
 
   if (error) {
@@ -176,7 +234,7 @@ tableWrap.addEventListener("click", async (e) => {
     return;
   }
 
-  msg.textContent = `PO ${po} marked Checked In.`;
+  msg.textContent = `PO ${po} checked in.`;
   await loadRows();
 });
 
