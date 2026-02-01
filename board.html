@@ -1,28 +1,178 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Officer Board</title>
-  <link rel="stylesheet" href="./styles.css">
+  <style>
+    body { font-family: system-ui, -apple-system, Arial; padding: 16px; }
+    h1 { margin: 0 0 6px; }
+    .note { color:#555; font-size:14px; margin-bottom:14px; }
+    .row { display:grid; grid-template-columns:1fr auto; gap:10px; }
+    input, button { padding:12px; font-size:16px; }
+    button { cursor:pointer; }
+    .msg { margin: 10px 0; font-weight:600; }
+    table { width:100%; border-collapse:collapse; margin-top:14px; }
+    th, td { border:1px solid #ddd; padding:10px; font-size:14px; vertical-align:top; }
+    th { background:#f5f5f5; text-align:left; }
+    .pill { display:inline-block; padding:4px 10px; border-radius:999px; border:1px solid #ddd; font-size:12px; }
+    .pill.queue { background:#fff; }
+    .pill.checked { background:#eefaf0; }
+    .big { font-size:16px; font-weight:700; }
+    .muted { color:#666; font-size:13px; }
+    .btnCheck { width: 100%; }
+  </style>
 </head>
 
 <body>
   <h1>Officer Board</h1>
-  <p class="muted">
-    Search PO → follow instruction → tap <b>Mark Checked In</b>.
-  </p>
+  <div class="note">
+    Status starts as <b>Queue</b>. Tap <b>Checked In</b> only after the driver checks in.
+    If Ledger Door is blank: Grocery → 56, Produce/Dairy → 93, Meat/Frozen → 132.
+  </div>
 
-  <label>Search PO</label>
-  <input
-    id="search"
-    maxlength="5"
-    inputmode="numeric"
-    placeholder="Type PO digits…"
-  />
+  <div class="row">
+    <input id="search" placeholder="Search PO (5 digits)…" inputmode="numeric" maxlength="5" />
+    <button id="refresh">Refresh</button>
+  </div>
 
-  <div id="results"></div>
+  <div class="msg" id="msg"></div>
 
-  <script type="module" src="./board.js"></script>
+  <div id="tableWrap"></div>
+
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+const supabase = createClient(
+  "https://pxiigthkswhnivanndfn.supabase.co",
+  "sb_publishable_fWVXeZM0mcylqczc6DWztA_Fu63kfj0"
+);
+
+const msg = document.getElementById("msg");
+const tableWrap = document.getElementById("tableWrap");
+const search = document.getElementById("search");
+const refreshBtn = document.getElementById("refresh");
+
+let rows = [];
+
+function autoDoor(dept) {
+  if (dept === "Grocery") return "56";
+  if (dept === "Produce/Dairy") return "93";
+  if (dept === "Meat/Frozen") return "132";
+  return "";
+}
+
+function doorForRow(r) {
+  return (r.ledger_door && String(r.ledger_door).trim()) ? String(r.ledger_door).trim() : autoDoor(r.department);
+}
+
+function pillForStatus(status) {
+  const s = (status || "Queue").toLowerCase();
+  if (s === "checked in") return `<span class="pill checked">Checked In</span>`;
+  return `<span class="pill queue">Queue</span>`;
+}
+
+async function loadRows() {
+  msg.textContent = "Loading…";
+  const { data, error } = await supabase
+    .from("trucks")
+    .select("po_number, department, ledger_door, carrier, shipper, notes, status, last_updated")
+    .order("last_updated", { ascending: false });
+
+  if (error) {
+    msg.textContent = `Load error: ${error.message}`;
+    rows = [];
+    render();
+    return;
+  }
+
+  msg.textContent = "";
+  rows = data || [];
+  render();
+}
+
+function render() {
+  const q = search.value.trim();
+  const view = q ? rows.filter(r => (r.po_number || "").includes(q)) : rows;
+
+  if (!view.length) {
+    tableWrap.innerHTML = `<p class="muted">No records found.</p>`;
+    return;
+  }
+
+  tableWrap.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th style="width:110px;">PO</th>
+          <th>Info</th>
+          <th style="width:150px;">Door</th>
+          <th style="width:140px;">Status</th>
+          <th style="width:160px;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${view.map(r => {
+          const door = doorForRow(r) || "—";
+          const status = r.status || "Queue";
+          const updated = r.last_updated ? new Date(r.last_updated).toLocaleString() : "";
+          const isChecked = String(status).toLowerCase() === "checked in";
+
+          return `
+            <tr>
+              <td class="big">${r.po_number || ""}</td>
+              <td>
+                <div><b>Dept:</b> ${r.department || ""}</div>
+                <div><b>Carrier:</b> ${r.carrier || ""}</div>
+                <div><b>Shipper:</b> ${r.shipper || ""}</div>
+                <div class="muted"><b>Notes:</b> ${r.notes || ""}</div>
+                <div class="muted"><b>Updated:</b> ${updated}</div>
+              </td>
+              <td class="big">${door}</td>
+              <td>${pillForStatus(status)}</td>
+              <td>
+                <button class="btnCheck" data-po="${r.po_number}" ${isChecked ? "disabled" : ""}>
+                  ${isChecked ? "Already Checked" : "Checked In"}
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+search.addEventListener("input", render);
+refreshBtn.addEventListener("click", loadRows);
+
+tableWrap.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-po]");
+  if (!btn) return;
+
+  const po = btn.dataset.po;
+  btn.disabled = true;
+  msg.textContent = `Checking in PO ${po}…`;
+
+  const { error } = await supabase
+    .from("trucks")
+    .update({
+      status: "Checked In",
+      last_updated: new Date().toISOString()
+    })
+    .eq("po_number", po);
+
+  if (error) {
+    msg.textContent = `Check-in failed: ${error.message}`;
+    btn.disabled = false;
+    return;
+  }
+
+  msg.textContent = `PO ${po} marked Checked In.`;
+  await loadRows();
+});
+
+loadRows();
+</script>
 </body>
 </html>
