@@ -7,9 +7,10 @@
   <style>
     body { font-family: system-ui, -apple-system, Arial; padding: 16px; }
     h1 { margin: 0 0 6px; }
-    .note { color:#555; font-size:14px; margin-bottom:14px; }
+    .note { color:#555; font-size:14px; margin-bottom:14px; line-height: 1.35; }
     .row { display:grid; grid-template-columns:1fr auto; gap:10px; }
-    input, button { padding:12px; font-size:16px; }
+    input, button { padding:12px; font-size:16px; box-sizing: border-box; }
+    input { width:100%; }
     button { cursor:pointer; }
     .msg { margin: 10px 0; font-weight:600; }
     table { width:100%; border-collapse:collapse; margin-top:14px; }
@@ -27,8 +28,11 @@
 <body>
   <h1>Officer Board</h1>
   <div class="note">
-    Status starts as <b>Queue</b>. Tap <b>Checked In</b> only after the driver checks in.
+    Search PO → follow instruction → tap <b>Checked In</b> after driver checks in.
+    <br>
     If Ledger Door is blank: Grocery → 56, Produce/Dairy → 93, Meat/Frozen → 132.
+    <br>
+    <span class="muted">Archived rows are hidden.</span>
   </div>
 
   <div class="row">
@@ -63,7 +67,8 @@ function autoDoor(dept) {
 }
 
 function doorForRow(r) {
-  return (r.ledger_door && String(r.ledger_door).trim()) ? String(r.ledger_door).trim() : autoDoor(r.department);
+  const ld = (r.ledger_door ?? "").toString().trim();
+  return ld ? ld : autoDoor(r.department);
 }
 
 function pillForStatus(status) {
@@ -74,9 +79,11 @@ function pillForStatus(status) {
 
 async function loadRows() {
   msg.textContent = "Loading…";
+
   const { data, error } = await supabase
     .from("trucks")
-    .select("po_number, department, ledger_door, carrier, shipper, notes, status, last_updated")
+    .select("po_number, department, ledger_door, carrier, shipper, notes, status, last_updated, archived")
+    .eq("archived", false)
     .order("last_updated", { ascending: false });
 
   if (error) {
@@ -93,7 +100,7 @@ async function loadRows() {
 
 function render() {
   const q = search.value.trim();
-  const view = q ? rows.filter(r => (r.po_number || "").includes(q)) : rows;
+  const view = q ? rows.filter(r => String(r.po_number || "").includes(q)) : rows;
 
   if (!view.length) {
     tableWrap.innerHTML = `<p class="muted">No records found.</p>`;
@@ -106,7 +113,7 @@ function render() {
         <tr>
           <th style="width:110px;">PO</th>
           <th>Info</th>
-          <th style="width:150px;">Door</th>
+          <th style="width:130px;">Door</th>
           <th style="width:140px;">Status</th>
           <th style="width:160px;">Action</th>
         </tr>
@@ -131,7 +138,7 @@ function render() {
               <td class="big">${door}</td>
               <td>${pillForStatus(status)}</td>
               <td>
-                <button class="btnCheck" data-po="${r.po_number}" ${isChecked ? "disabled" : ""}>
+                <button class="btnCheck" data-checkin="${r.po_number}" ${isChecked ? "disabled" : ""}>
                   ${isChecked ? "Already Checked" : "Checked In"}
                 </button>
               </td>
@@ -147,12 +154,13 @@ search.addEventListener("input", render);
 refreshBtn.addEventListener("click", loadRows);
 
 tableWrap.addEventListener("click", async (e) => {
-  const btn = e.target.closest("button[data-po]");
+  const btn = e.target.closest("button[data-checkin]");
   if (!btn) return;
 
-  const po = btn.dataset.po;
+  const po = btn.dataset.checkin;
   btn.disabled = true;
-  msg.textContent = `Checking in PO ${po}…`;
+
+  msg.textContent = `Marking PO ${po} as Checked In…`;
 
   const { error } = await supabase
     .from("trucks")
