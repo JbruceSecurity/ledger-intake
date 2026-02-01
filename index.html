@@ -7,23 +7,35 @@
 
   <style>
     body { font-family: system-ui, -apple-system, Arial; padding: 16px; }
-    h1 { margin-bottom: 6px; }
-    .note { color:#555; font-size:14px; margin-bottom:16px; line-height: 1.35; }
+    h1 { margin: 0 0 8px; }
+    h2 { margin: 18px 0 8px; }
+    .note { color:#555; font-size:14px; margin: 0 0 14px; line-height: 1.35; }
+    .muted { color:#666; font-size:13px; }
     label { font-weight:600; display:block; margin-top:14px; }
     input, select, button { width:100%; padding:12px; font-size:16px; margin-top:6px; box-sizing: border-box; }
     button { cursor:pointer; }
     .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .msg { margin-top:12px; font-weight:600; }
-    table { width:100%; border-collapse:collapse; margin-top:16px; }
+    table { width:100%; border-collapse:collapse; margin-top:12px; }
     th, td { border:1px solid #ddd; padding:10px; font-size:14px; vertical-align: top; }
-    th { background:#f5f5f5; text-align: left; }
+    th { background:#f5f5f5; text-align:left; }
     .btns { display:flex; gap:8px; flex-wrap: wrap; }
     .btns button { width:auto; padding:8px 10px; font-size:14px; }
-    .muted { color:#666; font-size:13px; }
-
-    /* Toggle row */
     .toolbar { display:flex; align-items:center; gap:10px; margin: 14px 0 6px; }
     .toolbar input[type="checkbox"] { width:auto; margin:0; transform: scale(1.2); }
+    .pill { display:inline-block; padding:4px 10px; border-radius:999px; border:1px solid #ddd; font-size:12px; }
+    .pill.queue { background:#fff; }
+    .pill.arch { background:#fff5f5; border-color:#f2b8b5; }
+    .danger { border:1px solid #f2b8b5; background:#fff5f5; padding:10px; border-radius:10px; margin-top:10px; }
+    .good { border:1px solid #b7e1c0; background:#f3fff6; padding:10px; border-radius:10px; margin-top:10px; }
+    .smallbtn { width:auto; padding:8px 10px; font-size:14px; }
+    .scanGrid { display:grid; grid-template-columns:1fr; gap:10px; }
+    .scanActions { display:flex; gap:10px; flex-wrap: wrap; }
+    .scanActions button { width:auto; }
+    .reviewRow { display:grid; grid-template-columns: 130px 1fr 110px 90px; gap:10px; align-items:center; margin-top:8px; }
+    .reviewRow input { margin-top:0; }
+    .reviewHead { display:grid; grid-template-columns: 130px 1fr 110px 90px; gap:10px; font-weight:700; margin-top:10px; }
+    .hr { height:1px; background:#eee; margin:18px 0; }
   </style>
 </head>
 
@@ -31,11 +43,12 @@
 <h1>Ledger Intake (Admin)</h1>
 
 <div class="note">
-  Admin creates & edits POs. Status stays <b>Queue</b> until officers check in.
+  Admin creates & edits POs. Admin always saves status as <b>Queue</b>.
+  Officers mark <b>Checked In</b> on the Officer Board.
   <br>
-  If no ledger door: Grocery → 56, Produce/Dairy → 93, Meat/Frozen → 132.
+  Door rule (for display): If Ledger Door blank → Grocery 56, Produce/Dairy 93, Meat/Frozen 132.
   <br>
-  <span class="muted">Archive hides a row from boards without deleting it. Use “Show Archived” to restore.</span>
+  <span class="muted">Recommended scanner settings for ledger OCR: <b>300 DPI</b>, grayscale, deskew ON, high contrast, save as JPG/PNG if possible.</span>
 </div>
 
 <form id="form">
@@ -84,8 +97,41 @@
 
 <div id="tableWrap"></div>
 
+<div class="hr"></div>
+
+<!-- PHASE 4: LEDGER SCAN MODULE -->
+<h2>Ledger Scan (Admin)</h2>
+
+<div class="note">
+  Upload scanned ledger page images → OCR finds 5-digit POs → you review → Import creates/updates rows as <b>Queue</b>.
+  <div class="muted">Tip: scan 1 page per image at 300 DPI if possible.</div>
+</div>
+
+<div class="scanGrid">
+  <div>
+    <label>Ledger Department for this scan batch</label>
+    <select id="ledgerDept">
+      <option>Grocery</option>
+      <option>Produce/Dairy</option>
+      <option>Meat/Frozen</option>
+    </select>
+  </div>
+
+  <div class="scanActions">
+    <button type="button" class="smallbtn" id="scanLedgerBtn">Upload Ledger Image(s)</button>
+    <button type="button" class="smallbtn" id="clearDetectedBtn" style="display:none;">Clear Detected</button>
+    <button type="button" class="smallbtn" id="importDetectedBtn" style="display:none;">Import Detected Rows</button>
+  </div>
+
+  <input id="ledgerFiles" type="file" accept="image/*" multiple style="display:none;" />
+  <div class="msg" id="ledgerMsg"></div>
+
+  <div id="previewWrap"></div>
+</div>
+
 <script type="module">
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+import Tesseract from "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.esm.min.js";
 
 const supabase = createClient(
   "https://pxiigthkswhnivanndfn.supabase.co",
@@ -124,13 +170,17 @@ function doorForRow(r) {
   return ld ? ld : autoDoor(r.department);
 }
 
+function statusPill(r) {
+  const isArchived = !!r.archived;
+  if (isArchived) return `<span class="pill arch">Archived</span>`;
+  return `<span class="pill queue">Queue</span>`;
+}
+
 async function loadRows() {
   msg.textContent = "Loading…";
 
   const wantArchived = showArchived.checked;
 
-  // If Show Archived is OFF: only non-archived
-  // If ON: show both archived and non-archived
   let query = supabase
     .from("trucks")
     .select("po_number, department, ledger_door, carrier, shipper, notes, status, last_updated, archived")
@@ -168,22 +218,21 @@ function render() {
           <th style="width:110px;">PO</th>
           <th style="width:140px;">Dept</th>
           <th style="width:120px;">Door</th>
-          <th style="width:110px;">Status</th>
+          <th style="width:120px;">Status</th>
           <th>Notes</th>
-          <th style="width:210px;">Actions</th>
+          <th style="width:240px;">Actions</th>
         </tr>
       </thead>
       <tbody>
         ${view.map(r => {
           const updated = r.last_updated ? new Date(r.last_updated).toLocaleString() : "";
           const isArchived = !!r.archived;
-
           return `
             <tr>
               <td><b>${r.po_number || ""}</b><div class="muted">${updated}</div></td>
               <td>${r.department || ""}${isArchived ? " <span class='muted'>(Archived)</span>" : ""}</td>
               <td><b>${doorForRow(r) || "—"}</b></td>
-              <td>${r.status || "Queue"}</td>
+              <td>${statusPill(r)}</td>
               <td>${r.notes || ""}</td>
               <td>
                 <div class="btns">
@@ -203,21 +252,14 @@ function render() {
   `;
 }
 
-// Save / Update (Admin always writes Queue)
+// Save / Update (Admin ALWAYS writes Queue)
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   msg.textContent = "";
 
   const poVal = po.value.trim();
-  if (!isFiveDigits(poVal)) {
-    msg.textContent = "PO must be exactly 5 digits.";
-    return;
-  }
-
-  if (!department.value) {
-    msg.textContent = "Department is required.";
-    return;
-  }
+  if (!isFiveDigits(poVal)) return (msg.textContent = "PO must be exactly 5 digits.");
+  if (!department.value) return (msg.textContent = "Department is required.");
 
   const record = {
     po_number: poVal,
@@ -227,9 +269,8 @@ form.addEventListener("submit", async (e) => {
     ledger_door: ledger_door.value.trim() || null,
     notes: notes.value.trim() || null,
 
-    // RULES
-    status: "Queue",
-    archived: false,            // if you re-enter a PO, it comes back
+    status: "Queue",      // Admin forces Queue
+    archived: false,      // Re-entering a PO restores it
 
     last_updated: new Date().toISOString()
   };
@@ -239,10 +280,7 @@ form.addEventListener("submit", async (e) => {
     .from("trucks")
     .upsert(record, { onConflict:"po_number" });
 
-  if (error) {
-    msg.textContent = `Save error: ${error.message}`;
-    return;
-  }
+  if (error) return (msg.textContent = `Save error: ${error.message}`);
 
   msg.textContent = "Saved (Queue).";
   form.reset();
@@ -258,7 +296,6 @@ tableWrap.addEventListener("click", async (e) => {
   const archiveBtn = e.target.closest("button[data-archive]");
   const restoreBtn = e.target.closest("button[data-restore]");
 
-  // EDIT
   if (editBtn) {
     const poNum = editBtn.dataset.edit;
     const r = rows.find(x => String(x.po_number) === String(poNum));
@@ -274,7 +311,6 @@ tableWrap.addEventListener("click", async (e) => {
     return;
   }
 
-  // ARCHIVE
   if (archiveBtn) {
     const poNum = archiveBtn.dataset.archive;
     const ok = confirm(`Archive PO ${poNum}?`);
@@ -286,17 +322,13 @@ tableWrap.addEventListener("click", async (e) => {
       .update({ archived: true, last_updated: new Date().toISOString() })
       .eq("po_number", poNum);
 
-    if (error) {
-      msg.textContent = `Archive failed: ${error.message}`;
-      return;
-    }
+    if (error) return (msg.textContent = `Archive failed: ${error.message}`);
 
     msg.textContent = `Archived PO ${poNum}.`;
     await loadRows();
     return;
   }
 
-  // RESTORE
   if (restoreBtn) {
     const poNum = restoreBtn.dataset.restore;
     const ok = confirm(`Restore PO ${poNum}?`);
@@ -308,17 +340,201 @@ tableWrap.addEventListener("click", async (e) => {
       .update({ archived: false, last_updated: new Date().toISOString() })
       .eq("po_number", poNum);
 
-    if (error) {
-      msg.textContent = `Restore failed: ${error.message}`;
-      return;
-    }
+    if (error) return (msg.textContent = `Restore failed: ${error.message}`);
 
     msg.textContent = `Restored PO ${poNum}.`;
     await loadRows();
   }
 });
 
+/* ------------------------------
+   PHASE 4B: LEDGER SCAN MODULE
+--------------------------------*/
+const ledgerDept = document.getElementById("ledgerDept");
+const scanLedgerBtn = document.getElementById("scanLedgerBtn");
+const ledgerFiles = document.getElementById("ledgerFiles");
+const ledgerMsg = document.getElementById("ledgerMsg");
+const previewWrap = document.getElementById("previewWrap");
+const importDetectedBtn = document.getElementById("importDetectedBtn");
+const clearDetectedBtn = document.getElementById("clearDetectedBtn");
+
+let detected = []; // {po_number, department, ledger_door, notes, keep}
+
+scanLedgerBtn.addEventListener("click", () => ledgerFiles.click());
+
+function unique(arr) { return Array.from(new Set(arr)); }
+
+// Conservative PO extraction: any standalone 5 digits
+function extractPOs(text) {
+  return unique((text.match(/\b\d{5}\b/g) || []));
+}
+
+// OPTIONAL / conservative door guess: only if literal "door" is present near a 1-3 digit number.
+// This is intentionally conservative to avoid bad doors.
+function extractDoorCandidates(text) {
+  const doors = [];
+  const re = /door\s*[:#-]?\s*(\d{1,3})/gi;
+  let m;
+  while ((m = re.exec(text)) !== null) doors.push(m[1]);
+  return unique(doors);
+}
+
+async function ocrFile(file, idx, total) {
+  ledgerMsg.textContent = `Scanning ledger image ${idx + 1}/${total}…`;
+  const { data } = await Tesseract.recognize(file, "eng", {
+    logger: (m) => {
+      if (m.status === "recognizing text") {
+        ledgerMsg.textContent = `Scanning ledger image ${idx + 1}/${total}… ${Math.round((m.progress || 0) * 100)}%`;
+      }
+    }
+  });
+  return data.text || "";
+}
+
+function renderDetected() {
+  if (!detected.length) {
+    previewWrap.innerHTML = `<p class="muted">No detected rows yet.</p>`;
+    importDetectedBtn.style.display = "none";
+    clearDetectedBtn.style.display = "none";
+    return;
+  }
+
+  const kept = detected.filter(d => d.keep);
+
+  previewWrap.innerHTML = `
+    <div class="good">
+      <b>Detected:</b> ${detected.length} POs • <b>Ready to import:</b> ${kept.length}
+      <div class="muted">Uncheck any PO you don’t want imported. You can type a ledger door if it’s clearly assigned.</div>
+    </div>
+
+    <div class="reviewHead">
+      <div>PO</div>
+      <div>Department</div>
+      <div>Ledger Door</div>
+      <div>Keep</div>
+    </div>
+
+    ${detected.map((d, i) => `
+      <div class="reviewRow" data-i="${i}">
+        <div><b>${d.po_number}</b></div>
+        <div>${d.department}</div>
+        <div><input class="doorIn" placeholder="(blank)" value="${d.ledger_door || ""}" /></div>
+        <div><input class="keepIn" type="checkbox" ${d.keep ? "checked" : ""} /></div>
+      </div>
+    `).join("")}
+  `;
+
+  importDetectedBtn.style.display = kept.length ? "inline-block" : "none";
+  clearDetectedBtn.style.display = "inline-block";
+}
+
+previewWrap.addEventListener("input", (e) => {
+  const row = e.target.closest(".reviewRow");
+  if (!row) return;
+  const i = Number(row.dataset.i);
+  if (!Number.isFinite(i) || !detected[i]) return;
+
+  if (e.target.classList.contains("doorIn")) {
+    const v = e.target.value.trim();
+    detected[i].ledger_door = v || null;
+  }
+
+  if (e.target.classList.contains("keepIn")) {
+    detected[i].keep = !!e.target.checked;
+    renderDetected(); // update counts + import button visibility
+  }
+});
+
+ledgerFiles.addEventListener("change", async () => {
+  const files = Array.from(ledgerFiles.files || []);
+  if (!files.length) return;
+
+  detected = [];
+  previewWrap.innerHTML = "";
+  importDetectedBtn.style.display = "none";
+  clearDetectedBtn.style.display = "none";
+
+  const dept = ledgerDept.value;
+
+  for (let i = 0; i < files.length; i++) {
+    const text = await ocrFile(files[i], i, files.length);
+
+    const pos = extractPOs(text);
+
+    // Door candidates are unreliable; we keep blank by default.
+    // If the scan clearly contains "door 12" etc, you can still type it during review.
+    // (If you later want auto-matching per-line, we can refine.)
+    // const doorHints = extractDoorCandidates(text);
+
+    for (const poNum of pos) {
+      detected.push({
+        po_number: poNum,
+        department: dept,
+        ledger_door: null,
+        notes: null,
+        keep: true
+      });
+    }
+  }
+
+  // De-dupe by PO (keep first)
+  const map = new Map();
+  for (const d of detected) if (!map.has(d.po_number)) map.set(d.po_number, d);
+  detected = Array.from(map.values());
+
+  ledgerMsg.textContent = detected.length
+    ? "Review the detected POs below. Uncheck any that are wrong. Then Import."
+    : "No 5-digit POs detected. Try a clearer scan (300 DPI, deskew ON, higher contrast).";
+
+  renderDetected();
+  ledgerFiles.value = "";
+});
+
+clearDetectedBtn.addEventListener("click", () => {
+  detected = [];
+  ledgerMsg.textContent = "";
+  renderDetected();
+});
+
+importDetectedBtn.addEventListener("click", async () => {
+  const toImport = detected.filter(d => d.keep);
+  if (!toImport.length) return;
+
+  ledgerMsg.textContent = "Importing…";
+
+  // Build records for upsert (Admin rules: Queue + not archived)
+  const records = toImport.map(d => ({
+    po_number: d.po_number,
+    department: d.department,
+    ledger_door: d.ledger_door,
+    status: "Queue",
+    archived: false,
+    last_updated: new Date().toISOString()
+  }));
+
+  // Chunk upserts so it doesn't blow request size limits
+  const chunkSize = 100;
+  for (let i = 0; i < records.length; i += chunkSize) {
+    const chunk = records.slice(i, i + chunkSize);
+    const { error } = await supabase
+      .from("trucks")
+      .upsert(chunk, { onConflict: "po_number" });
+
+    if (error) {
+      ledgerMsg.textContent = `Import failed: ${error.message}`;
+      return;
+    }
+  }
+
+  ledgerMsg.textContent = `Imported ${records.length} rows (Queue).`;
+  detected = [];
+  renderDetected();
+  await loadRows();
+});
+
+/* initial load */
 loadRows();
+renderDetected();
 </script>
 </body>
 </html>
