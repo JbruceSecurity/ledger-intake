@@ -1,61 +1,176 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Ledger Intake (Admin)</title>
-  <link rel="stylesheet" href="./styles.css">
+
+  <style>
+    body { font-family: system-ui, -apple-system, Arial; padding: 16px; }
+    h1 { margin-bottom: 6px; }
+    .note { color:#555; font-size:14px; margin-bottom:16px; }
+    label { font-weight:600; display:block; margin-top:14px; }
+    input, select, button {
+      width:100%; padding:12px; font-size:16px; margin-top:6px;
+    }
+    button { cursor:pointer; margin-top:16px; }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .msg { margin-top:12px; font-weight:600; }
+    table { width:100%; border-collapse:collapse; margin-top:20px; }
+    th, td { border:1px solid #ddd; padding:8px; font-size:14px; }
+    th { background:#f5f5f5; }
+  </style>
 </head>
 
 <body>
-  <h1>Ledger Intake (Admin)</h1>
-  <p class="muted">
-    Admin creates/updates POs. Status stays <b>Queue</b> until officers check in.
-    If no ledger door: Grocery → 56, Produce/Dairy → 93, Meat/Frozen → 132.
-  </p>
+<h1>Ledger Intake (Admin)</h1>
 
-  <form id="form">
-    <label>PO Number (5 digits)</label>
-    <input id="po" maxlength="5" inputmode="numeric" placeholder="12345" required />
+<div class="note">
+Admin creates & edits POs.  
+Status stays <b>Queue</b> until officers check in.  
+If no ledger door: Grocery → 56, Produce/Dairy → 93, Meat/Frozen → 132.
+</div>
 
-    <div class="row">
-      <div>
-        <label>Carrier</label>
-        <input id="carrier" placeholder="e.g., Swift" />
-      </div>
-      <div>
-        <label>Shipper</label>
-        <input id="shipper" placeholder="Vendor name" />
-      </div>
+<form id="form">
+  <label>PO Number (5 digits)</label>
+  <input id="po" maxlength="5" required />
+
+  <div class="row">
+    <div>
+      <label>Carrier</label>
+      <input id="carrier" />
     </div>
-
-    <label>Department</label>
-    <select id="department" required>
-      <option value="">Select department</option>
-      <option>Grocery</option>
-      <option>Produce/Dairy</option>
-      <option>Meat/Frozen</option>
-    </select>
-
-    <label>Ledger Door (optional)</label>
-    <input id="ledgerDoor" placeholder="From warehouse ledger (may be blank)" />
-
-    <label>Notes (optional)</label>
-    <input id="notes" placeholder="Short note for officers (optional)" />
-
-    <div class="actions">
-      <button type="submit">Save / Update</button>
-      <button type="button" id="clearBtn">Clear</button>
+    <div>
+      <label>Shipper</label>
+      <input id="shipper" />
     </div>
-  </form>
+  </div>
 
-  <p id="msg" class="muted"></p>
+  <label>Department</label>
+  <select id="department" required>
+    <option value="">Select department</option>
+    <option>Grocery</option>
+    <option>Produce/Dairy</option>
+    <option>Meat/Frozen</option>
+  </select>
 
-  <label>Search PO</label>
-  <input id="search" maxlength="5" inputmode="numeric" placeholder="Type PO digits…" />
+  <label>Ledger Door (optional)</label>
+  <input id="ledger_door" placeholder="Leave blank if not assigned" />
 
-  <div id="tableWrap"></div>
+  <label>Notes (optional)</label>
+  <input id="notes" />
 
-  <script type="module" src="./app.js"></script>
+  <button type="submit">Save / Update</button>
+</form>
+
+<div class="msg" id="msg"></div>
+
+<label>Search PO</label>
+<input id="search" placeholder="Type PO digits…" />
+
+<div id="tableWrap"></div>
+
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+const supabase = createClient(
+  "https://pxiigthkswhnivanndfn.supabase.co",
+  "sb_publishable_fWVXeZM0mcylqczc6DWztA_Fu63kfj0"
+);
+
+const form = document.getElementById("form");
+const tableWrap = document.getElementById("tableWrap");
+const msg = document.getElementById("msg");
+const search = document.getElementById("search");
+
+let rows = [];
+
+function autoDoor(dept) {
+  if (dept === "Grocery") return "56";
+  if (dept === "Produce/Dairy") return "93";
+  if (dept === "Meat/Frozen") return "132";
+  return "";
+}
+
+async function loadRows() {
+  const { data } = await supabase
+    .from("trucks")
+    .select("*")
+    .order("last_updated", { ascending:false });
+
+  rows = data || [];
+  render();
+}
+
+function render() {
+  const q = search.value.trim();
+  const view = q ? rows.filter(r => r.po_number.includes(q)) : rows;
+
+  if (!view.length) {
+    tableWrap.innerHTML = "<p>No records</p>";
+    return;
+  }
+
+  tableWrap.innerHTML = `
+    <table>
+      <tr>
+        <th>PO</th><th>Dept</th><th>Door</th><th>Status</th><th>Edit</th>
+      </tr>
+      ${view.map(r => `
+        <tr>
+          <td>${r.po_number}</td>
+          <td>${r.department}</td>
+          <td>${r.ledger_door || autoDoor(r.department)}</td>
+          <td>Queue</td>
+          <td><button data-po="${r.po_number}">Edit</button></td>
+        </tr>
+      `).join("")}
+    </table>
+  `;
+}
+
+form.addEventListener("submit", async e => {
+  e.preventDefault();
+  msg.textContent = "";
+
+  const record = {
+    po_number: po.value,
+    carrier: carrier.value,
+    shipper: shipper.value,
+    department: department.value,
+    ledger_door: ledger_door.value || null,
+    notes: notes.value || null,
+    status: "Queue",
+    last_updated: new Date().toISOString()
+  };
+
+  const { error } = await supabase
+    .from("trucks")
+    .upsert(record, { onConflict:"po_number" });
+
+  if (error) {
+    msg.textContent = error.message;
+  } else {
+    msg.textContent = "Saved";
+    form.reset();
+    loadRows();
+  }
+});
+
+search.addEventListener("input", render);
+
+tableWrap.addEventListener("click", e => {
+  if (!e.target.dataset.po) return;
+  const r = rows.find(x => x.po_number === e.target.dataset.po);
+  po.value = r.po_number;
+  carrier.value = r.carrier || "";
+  shipper.value = r.shipper || "";
+  department.value = r.department;
+  ledger_door.value = r.ledger_door || "";
+  notes.value = r.notes || "";
+});
+
+loadRows();
+</script>
 </body>
 </html>
