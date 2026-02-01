@@ -8,17 +8,18 @@
   <style>
     body { font-family: system-ui, -apple-system, Arial; padding: 16px; }
     h1 { margin-bottom: 6px; }
-    .note { color:#555; font-size:14px; margin-bottom:16px; }
+    .note { color:#555; font-size:14px; margin-bottom:16px; line-height: 1.35; }
     label { font-weight:600; display:block; margin-top:14px; }
-    input, select, button {
-      width:100%; padding:12px; font-size:16px; margin-top:6px;
-    }
-    button { cursor:pointer; margin-top:16px; }
+    input, select, button { width:100%; padding:12px; font-size:16px; margin-top:6px; box-sizing: border-box; }
+    button { cursor:pointer; }
     .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .msg { margin-top:12px; font-weight:600; }
     table { width:100%; border-collapse:collapse; margin-top:20px; }
-    th, td { border:1px solid #ddd; padding:8px; font-size:14px; }
-    th { background:#f5f5f5; }
+    th, td { border:1px solid #ddd; padding:10px; font-size:14px; vertical-align: top; }
+    th { background:#f5f5f5; text-align: left; }
+    .btns { display:flex; gap:8px; }
+    .btns button { width:auto; padding:8px 10px; font-size:14px; }
+    .muted { color:#666; font-size:13px; }
   </style>
 </head>
 
@@ -26,14 +27,16 @@
 <h1>Ledger Intake (Admin)</h1>
 
 <div class="note">
-Admin creates & edits POs.  
-Status stays <b>Queue</b> until officers check in.  
-If no ledger door: Grocery → 56, Produce/Dairy → 93, Meat/Frozen → 132.
+  Admin creates & edits POs. Status stays <b>Queue</b> until officers check in.
+  <br>
+  If no ledger door: Grocery → 56, Produce/Dairy → 93, Meat/Frozen → 132.
+  <br>
+  <span class="muted">Archive removes a row from boards without deleting it.</span>
 </div>
 
 <form id="form">
   <label>PO Number (5 digits)</label>
-  <input id="po" maxlength="5" required />
+  <input id="po" maxlength="5" inputmode="numeric" required />
 
   <div class="row">
     <div>
@@ -66,7 +69,7 @@ If no ledger door: Grocery → 56, Produce/Dairy → 93, Meat/Frozen → 132.
 <div class="msg" id="msg"></div>
 
 <label>Search PO</label>
-<input id="search" placeholder="Type PO digits…" />
+<input id="search" placeholder="Type PO digits…" inputmode="numeric" maxlength="5" />
 
 <div id="tableWrap"></div>
 
@@ -83,7 +86,19 @@ const tableWrap = document.getElementById("tableWrap");
 const msg = document.getElementById("msg");
 const search = document.getElementById("search");
 
+// Inputs
+const po = document.getElementById("po");
+const carrier = document.getElementById("carrier");
+const shipper = document.getElementById("shipper");
+const department = document.getElementById("department");
+const ledger_door = document.getElementById("ledger_door");
+const notes = document.getElementById("notes");
+
 let rows = [];
+
+function isFiveDigits(v) {
+  return /^\d{5}$/.test(String(v || "").trim());
+}
 
 function autoDoor(dept) {
   if (dept === "Grocery") return "56";
@@ -92,82 +107,167 @@ function autoDoor(dept) {
   return "";
 }
 
+function doorForRow(r) {
+  const ld = (r.ledger_door ?? "").toString().trim();
+  return ld ? ld : autoDoor(r.department);
+}
+
 async function loadRows() {
-  const { data } = await supabase
+  msg.textContent = "Loading…";
+
+  const { data, error } = await supabase
     .from("trucks")
-    .select("*")
+    .select("po_number, department, ledger_door, carrier, shipper, notes, status, last_updated, archived")
+    .eq("archived", false)
     .order("last_updated", { ascending:false });
 
+  if (error) {
+    msg.textContent = `Load error: ${error.message}`;
+    rows = [];
+    render();
+    return;
+  }
+
+  msg.textContent = "";
   rows = data || [];
   render();
 }
 
 function render() {
   const q = search.value.trim();
-  const view = q ? rows.filter(r => r.po_number.includes(q)) : rows;
+  const view = q ? rows.filter(r => String(r.po_number || "").includes(q)) : rows;
 
   if (!view.length) {
-    tableWrap.innerHTML = "<p>No records</p>";
+    tableWrap.innerHTML = "<p class='muted'>No records</p>";
     return;
   }
 
   tableWrap.innerHTML = `
     <table>
-      <tr>
-        <th>PO</th><th>Dept</th><th>Door</th><th>Status</th><th>Edit</th>
-      </tr>
-      ${view.map(r => `
+      <thead>
         <tr>
-          <td>${r.po_number}</td>
-          <td>${r.department}</td>
-          <td>${r.ledger_door || autoDoor(r.department)}</td>
-          <td>Queue</td>
-          <td><button data-po="${r.po_number}">Edit</button></td>
+          <th style="width:110px;">PO</th>
+          <th style="width:140px;">Dept</th>
+          <th style="width:120px;">Door</th>
+          <th style="width:110px;">Status</th>
+          <th>Notes</th>
+          <th style="width:170px;">Actions</th>
         </tr>
-      `).join("")}
+      </thead>
+      <tbody>
+        ${view.map(r => {
+          const updated = r.last_updated ? new Date(r.last_updated).toLocaleString() : "";
+          return `
+            <tr>
+              <td><b>${r.po_number || ""}</b><div class="muted">${updated}</div></td>
+              <td>${r.department || ""}</td>
+              <td><b>${doorForRow(r) || "—"}</b></td>
+              <td>${r.status || "Queue"}</td>
+              <td>${r.notes || ""}</td>
+              <td>
+                <div class="btns">
+                  <button data-edit="${r.po_number}">Edit</button>
+                  <button data-archive="${r.po_number}">Archive</button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join("")}
+      </tbody>
     </table>
   `;
 }
 
-form.addEventListener("submit", async e => {
+// Save / Update (Admin always writes Queue)
+form.addEventListener("submit", async (e) => {
   e.preventDefault();
   msg.textContent = "";
 
+  const poVal = po.value.trim();
+  if (!isFiveDigits(poVal)) {
+    msg.textContent = "PO must be exactly 5 digits.";
+    return;
+  }
+
+  if (!department.value) {
+    msg.textContent = "Department is required.";
+    return;
+  }
+
   const record = {
-    po_number: po.value,
-    carrier: carrier.value,
-    shipper: shipper.value,
+    po_number: poVal,
+    carrier: carrier.value.trim() || null,
+    shipper: shipper.value.trim() || null,
     department: department.value,
-    ledger_door: ledger_door.value || null,
-    notes: notes.value || null,
+    ledger_door: ledger_door.value.trim() || null,
+    notes: notes.value.trim() || null,
+
+    // RULES
     status: "Queue",
+    archived: false,
+
     last_updated: new Date().toISOString()
   };
 
+  msg.textContent = "Saving…";
   const { error } = await supabase
     .from("trucks")
     .upsert(record, { onConflict:"po_number" });
 
   if (error) {
-    msg.textContent = error.message;
-  } else {
-    msg.textContent = "Saved";
-    form.reset();
-    loadRows();
+    msg.textContent = `Save error: ${error.message}`;
+    return;
   }
+
+  msg.textContent = "Saved (Queue).";
+  form.reset();
+  await loadRows();
 });
 
 search.addEventListener("input", render);
 
-tableWrap.addEventListener("click", e => {
-  if (!e.target.dataset.po) return;
-  const r = rows.find(x => x.po_number === e.target.dataset.po);
-  po.value = r.po_number;
-  carrier.value = r.carrier || "";
-  shipper.value = r.shipper || "";
-  department.value = r.department;
-  ledger_door.value = r.ledger_door || "";
-  notes.value = r.notes || "";
+// Edit + Archive actions
+tableWrap.addEventListener("click", async (e) => {
+  const editBtn = e.target.closest("button[data-edit]");
+  const archiveBtn = e.target.closest("button[data-archive]");
+
+  // EDIT
+  if (editBtn) {
+    const poNum = editBtn.dataset.edit;
+    const r = rows.find(x => String(x.po_number) === String(poNum));
+    if (!r) return;
+
+    po.value = r.po_number || "";
+    carrier.value = r.carrier || "";
+    shipper.value = r.shipper || "";
+    department.value = r.department || "";
+    ledger_door.value = r.ledger_door || "";
+    notes.value = r.notes || "";
+    msg.textContent = "Loaded for editing. Update fields → Save/Update.";
+    return;
+  }
+
+  // ARCHIVE
+  if (archiveBtn) {
+    const poNum = archiveBtn.dataset.archive;
+    const ok = confirm(`Archive PO ${poNum}?`);
+    if (!ok) return;
+
+    msg.textContent = `Archiving PO ${poNum}…`;
+
+    const { error } = await supabase
+      .from("trucks")
+      .update({ archived: true, last_updated: new Date().toISOString() })
+      .eq("po_number", poNum);
+
+    if (error) {
+      msg.textContent = `Archive failed: ${error.message}`;
+      return;
+    }
+
+    msg.textContent = `Archived PO ${poNum}.`;
+    await loadRows();
+  }
 });
 
 loadRows();
