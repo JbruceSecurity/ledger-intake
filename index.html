@@ -14,12 +14,16 @@
     button { cursor:pointer; }
     .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .msg { margin-top:12px; font-weight:600; }
-    table { width:100%; border-collapse:collapse; margin-top:20px; }
+    table { width:100%; border-collapse:collapse; margin-top:16px; }
     th, td { border:1px solid #ddd; padding:10px; font-size:14px; vertical-align: top; }
     th { background:#f5f5f5; text-align: left; }
-    .btns { display:flex; gap:8px; }
+    .btns { display:flex; gap:8px; flex-wrap: wrap; }
     .btns button { width:auto; padding:8px 10px; font-size:14px; }
     .muted { color:#666; font-size:13px; }
+
+    /* Toggle row */
+    .toolbar { display:flex; align-items:center; gap:10px; margin: 14px 0 6px; }
+    .toolbar input[type="checkbox"] { width:auto; margin:0; transform: scale(1.2); }
   </style>
 </head>
 
@@ -31,7 +35,7 @@
   <br>
   If no ledger door: Grocery → 56, Produce/Dairy → 93, Meat/Frozen → 132.
   <br>
-  <span class="muted">Archive removes a row from boards without deleting it.</span>
+  <span class="muted">Archive hides a row from boards without deleting it. Use “Show Archived” to restore.</span>
 </div>
 
 <form id="form">
@@ -68,8 +72,15 @@
 
 <div class="msg" id="msg"></div>
 
-<label>Search PO</label>
-<input id="search" placeholder="Type PO digits…" inputmode="numeric" maxlength="5" />
+<div class="toolbar">
+  <label style="margin:0; font-weight:600;">Search PO</label>
+  <input id="search" placeholder="Type PO digits…" inputmode="numeric" maxlength="5" style="flex:1; margin-top:0;" />
+</div>
+
+<div class="toolbar">
+  <input type="checkbox" id="showArchived" />
+  <label for="showArchived" style="margin:0; font-weight:600;">Show Archived</label>
+</div>
 
 <div id="tableWrap"></div>
 
@@ -85,6 +96,7 @@ const form = document.getElementById("form");
 const tableWrap = document.getElementById("tableWrap");
 const msg = document.getElementById("msg");
 const search = document.getElementById("search");
+const showArchived = document.getElementById("showArchived");
 
 // Inputs
 const po = document.getElementById("po");
@@ -115,11 +127,18 @@ function doorForRow(r) {
 async function loadRows() {
   msg.textContent = "Loading…";
 
-  const { data, error } = await supabase
+  const wantArchived = showArchived.checked;
+
+  // If Show Archived is OFF: only non-archived
+  // If ON: show both archived and non-archived
+  let query = supabase
     .from("trucks")
     .select("po_number, department, ledger_door, carrier, shipper, notes, status, last_updated, archived")
-    .eq("archived", false)
     .order("last_updated", { ascending:false });
+
+  if (!wantArchived) query = query.eq("archived", false);
+
+  const { data, error } = await query;
 
   if (error) {
     msg.textContent = `Load error: ${error.message}`;
@@ -151,23 +170,29 @@ function render() {
           <th style="width:120px;">Door</th>
           <th style="width:110px;">Status</th>
           <th>Notes</th>
-          <th style="width:170px;">Actions</th>
+          <th style="width:210px;">Actions</th>
         </tr>
       </thead>
       <tbody>
         ${view.map(r => {
           const updated = r.last_updated ? new Date(r.last_updated).toLocaleString() : "";
+          const isArchived = !!r.archived;
+
           return `
             <tr>
               <td><b>${r.po_number || ""}</b><div class="muted">${updated}</div></td>
-              <td>${r.department || ""}</td>
+              <td>${r.department || ""}${isArchived ? " <span class='muted'>(Archived)</span>" : ""}</td>
               <td><b>${doorForRow(r) || "—"}</b></td>
               <td>${r.status || "Queue"}</td>
               <td>${r.notes || ""}</td>
               <td>
                 <div class="btns">
                   <button data-edit="${r.po_number}">Edit</button>
-                  <button data-archive="${r.po_number}">Archive</button>
+                  ${
+                    isArchived
+                      ? `<button data-restore="${r.po_number}">Restore</button>`
+                      : `<button data-archive="${r.po_number}">Archive</button>`
+                  }
                 </div>
               </td>
             </tr>
@@ -204,7 +229,7 @@ form.addEventListener("submit", async (e) => {
 
     // RULES
     status: "Queue",
-    archived: false,
+    archived: false,            // if you re-enter a PO, it comes back
 
     last_updated: new Date().toISOString()
   };
@@ -225,11 +250,13 @@ form.addEventListener("submit", async (e) => {
 });
 
 search.addEventListener("input", render);
+showArchived.addEventListener("change", loadRows);
 
-// Edit + Archive actions
+// Edit + Archive + Restore
 tableWrap.addEventListener("click", async (e) => {
   const editBtn = e.target.closest("button[data-edit]");
   const archiveBtn = e.target.closest("button[data-archive]");
+  const restoreBtn = e.target.closest("button[data-restore]");
 
   // EDIT
   if (editBtn) {
@@ -254,7 +281,6 @@ tableWrap.addEventListener("click", async (e) => {
     if (!ok) return;
 
     msg.textContent = `Archiving PO ${poNum}…`;
-
     const { error } = await supabase
       .from("trucks")
       .update({ archived: true, last_updated: new Date().toISOString() })
@@ -266,6 +292,28 @@ tableWrap.addEventListener("click", async (e) => {
     }
 
     msg.textContent = `Archived PO ${poNum}.`;
+    await loadRows();
+    return;
+  }
+
+  // RESTORE
+  if (restoreBtn) {
+    const poNum = restoreBtn.dataset.restore;
+    const ok = confirm(`Restore PO ${poNum}?`);
+    if (!ok) return;
+
+    msg.textContent = `Restoring PO ${poNum}…`;
+    const { error } = await supabase
+      .from("trucks")
+      .update({ archived: false, last_updated: new Date().toISOString() })
+      .eq("po_number", poNum);
+
+    if (error) {
+      msg.textContent = `Restore failed: ${error.message}`;
+      return;
+    }
+
+    msg.textContent = `Restored PO ${poNum}.`;
     await loadRows();
   }
 });
