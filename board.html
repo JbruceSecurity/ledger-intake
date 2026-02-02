@@ -16,22 +16,21 @@
     th, td { border:1px solid #ddd; padding:8px; font-size:14px; vertical-align: top; }
     th { background:#f5f5f5; text-align:left; }
     .pill { display:inline-block; padding:3px 8px; border-radius:999px; font-size:12px; border:1px solid #ddd; }
-    .msg { margin: 10px 0; font-weight: 700; }
+    .msg { margin: 10px 0; font-weight: 800; }
     .stats { display:flex; gap:10px; flex-wrap: wrap; margin-top: 8px; }
     .stat { border:1px solid #ddd; border-radius: 12px; padding: 8px 10px; font-size: 13px; }
-    .small { font-size: 12px; }
     .hidden { display:none; }
+    .dangerText { color:#b00020; font-weight: 900; font-size: 18px; }
   </style>
 </head>
 <body>
   <h1>Officer Board</h1>
   <div class="muted">
-    Search PO → verify instruction → tap <b>Checked In</b>.
-    Undo is available for 5 minutes after check-in.
+    Search PO → verify instruction → tap <b>Checked In</b>. Undo is available for 5 minutes after check-in.
     Door rules: ledger door wins; otherwise Grocery→56, Produce/Dairy→93, Meat/Frozen→132.
   </div>
 
-  <div class="stats" id="stats">
+  <div class="stats">
     <div class="stat"><b>Total:</b> <span id="cTotal">0</span></div>
     <div class="stat"><b>Queue:</b> <span id="cQueue">0</span></div>
     <div class="stat"><b>Checked In:</b> <span id="cChecked">0</span></div>
@@ -43,17 +42,17 @@
   <input id="searchPO" maxlength="5" inputmode="numeric" placeholder="Type PO digits…" />
 
   <div class="row">
-    <button id="scanBolBtn">Scan BOL (find PO)</button>
+    <button id="scanBolBtn">Scan BOL (auto-find PO)</button>
     <button id="refreshBtn">Refresh</button>
     <button id="clearSearchBtn" type="button">Clear Search</button>
   </div>
 
-  <!-- Hidden camera/file input for BOL scanning -->
+  <!-- Hidden camera/file input -->
   <input id="bolFile" class="hidden" type="file" accept="image/*" capture="environment" />
 
   <div id="tableWrap"></div>
 
-  <!-- OCR library (Tesseract.js) -->
+  <!-- OCR library -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <script type="module">
@@ -67,7 +66,6 @@
     const refreshBtn = document.getElementById("refreshBtn");
     const searchPO = document.getElementById("searchPO");
     const clearSearchBtn = document.getElementById("clearSearchBtn");
-
     const scanBolBtn = document.getElementById("scanBolBtn");
     const bolFile = document.getElementById("bolFile");
 
@@ -106,7 +104,6 @@
       const total = rows.length;
       const queue = rows.filter(r => (r.status || "") === "Queue").length;
       const checked = rows.filter(r => (r.status || "") === "Checked In").length;
-
       cTotal.textContent = String(total);
       cQueue.textContent = String(queue);
       cChecked.textContent = String(checked);
@@ -181,58 +178,129 @@
     searchPO.addEventListener("input", () => render(lastRows));
     clearSearchBtn.addEventListener("click", () => { searchPO.value = ""; render(lastRows); });
 
-    // ---- BOL Scan flow ----
+    // ---- BOL Scan (whole page) ----
     scanBolBtn.addEventListener("click", () => {
-      msg.textContent = "Open camera / select BOL photo…";
+      msg.textContent = "Open camera / select full BOL photo…";
       bolFile.value = "";
       bolFile.click();
     });
+
+    function extractFiveDigitCandidatesWithContext(text) {
+      // keep the original spacing as much as possible for context scoring
+      const normalized = (text || "").replace(/\r/g, "\n");
+      const re = /\b(\d{5})\b/g;
+      const hits = [];
+      let m;
+      while ((m = re.exec(normalized)) !== null) {
+        hits.push({ po: m[1], idx: m.index });
+      }
+      return { normalized, hits };
+    }
+
+    function scoreByPOKeywordsAround(normalizedText, idx) {
+      // look around the digits for PO keywords
+      const windowSize = 90;
+      const start = Math.max(0, idx - windowSize);
+      const end = Math.min(normalizedText.length, idx + 5 + windowSize);
+      const ctx = normalizedText.slice(start, end).toLowerCase().replace(/\s+/g, " ");
+
+      // strong indicators
+      const strong = [
+        "po#", "po #", "p.o.", "p.o", "p.o#", "p.o #",
+        "purchase order", "customer po", "cust po", "po number", "po no", "po num"
+      ];
+      // mild
+      const mild = [" po ", " p.o "];
+
+      let score = 0;
+
+      // direct pattern boosts
+      if (ctx.match(/(po|p\.o\.|purchase order|customer po|cust po)[^0-9]{0,12}\d{5}/)) score += 15;
+
+      for (const s of strong) if (ctx.includes(s)) score += 8;
+      for (const m of mild) if (ctx.includes(m)) score += 3;
+
+      // weak penalties for address-ish context (zip/address noise)
+      const negatives = ["zip", "zipcode", "address", "st ", "ave", "rd ", "blvd", "suite", "phone", "tel"];
+      for (const n of negatives) if (ctx.includes(n)) score -= 4;
+
+      return score;
+    }
+
+    function chooseBestPOFromOCR(ocrText, rows) {
+      // Only guess from POs that are currently Queue (your requirement)
+      const queueSet = new Set(
+        rows.filter(r => (r.status || "") === "Queue").map(r => String(r.po_number || ""))
+      );
+
+      const { normalized, hits } = extractFiveDigitCandidatesWithContext(ocrText);
+
+      // Count candidates, but keep only those present in Queue
+      const scored = [];
+      for (const h of hits) {
+        if (!queueSet.has(h.po)) continue; // key rule: must be in Queue
+        const score = scoreByPOKeywordsAround(normalized, h.idx);
+        scored.push({ po: h.po, score });
+      }
+
+      if (!scored.length) return { best: null, ranked: [] };
+
+      // Deduplicate by keeping max score per PO
+      const bestByPO = new Map();
+      for (const s of scored) {
+        const prev = bestByPO.get(s.po);
+        if (!prev || s.score > prev.score) bestByPO.set(s.po, s);
+      }
+
+      const ranked = Array.from(bestByPO.values()).sort((a,b) => b.score - a.score);
+
+      // If the top result is weak, still pick it, but we can optionally ask
+      const best = ranked[0];
+      return { best: best.po, ranked };
+    }
 
     bolFile.addEventListener("change", async () => {
       const file = bolFile.files?.[0];
       if (!file) return;
 
       try {
-        msg.textContent = "Scanning BOL… (hold steady)";
+        msg.textContent = "Scanning full BOL… (hold steady)";
         const imgUrl = URL.createObjectURL(file);
 
-        // OCR
         const result = await Tesseract.recognize(imgUrl, "eng", {
           logger: (m) => {
             if (m?.status === "recognizing text" && typeof m.progress === "number") {
-              msg.textContent = `Scanning BOL… ${Math.round(m.progress * 100)}%`;
+              msg.textContent = `Scanning full BOL… ${Math.round(m.progress * 100)}%`;
             }
           }
         });
 
         URL.revokeObjectURL(imgUrl);
 
-        const text = (result?.data?.text || "").replace(/\s+/g, " ");
-        // Find 5-digit numbers (POs)
-        const matches = text.match(/\b\d{5}\b/g) || [];
-        const unique = Array.from(new Set(matches));
+        const text = (result?.data?.text || "");
+        const chosen = chooseBestPOFromOCR(text, lastRows);
 
-        if (!unique.length) {
-          msg.textContent = "No 5-digit PO found. Try a clearer photo (zoom on the PO).";
+        if (chosen.best) {
+          // If multiple queue POs exist on the BOL, we auto-pick the best keyword match.
+          // If you want a picker sometimes, we can add it later, but you asked to guess.
+          searchPO.value = chosen.best;
+          render(lastRows);
+
+          // helpful message if multiple were detected
+          if (chosen.ranked.length > 1) {
+            const top3 = chosen.ranked.slice(0,3).map(x => `${x.po}`).join(", ");
+            msg.textContent = `Guessed PO ${chosen.best} (from Queue). Top matches: ${top3}`;
+          } else {
+            msg.textContent = `Guessed PO ${chosen.best} (from Queue).`;
+          }
           return;
         }
 
-        // If multiple POs detected, let officer choose
-        let chosen = unique[0];
-        if (unique.length > 1) {
-          const pick = prompt(
-            `Multiple 5-digit numbers found:\n\n${unique.join(", ")}\n\nType the correct PO:`,
-            unique[0]
-          );
-          if (pick && /^\d{5}$/.test(pick.trim())) chosen = pick.trim();
-        }
-
-        searchPO.value = chosen;
-        render(lastRows);
-        msg.textContent = `PO ${chosen} detected from BOL.`;
+        // No Queue PO found in the scanned page
+        msg.innerHTML = `<span class="dangerText">NO QUEUE PO FOUND ON BOL — Try a clearer photo.</span>`;
 
       } catch (err) {
-        msg.textContent = `BOL scan failed: ${err?.message || err}`;
+        msg.innerHTML = `<span class="dangerText">BOL scan failed: ${err?.message || err}</span>`;
       }
     });
 
@@ -277,7 +345,7 @@
     });
 
     loadRows();
-    setInterval(loadRows, 20000); // auto refresh
+    setInterval(loadRows, 20000);
   </script>
 </body>
 </html>
