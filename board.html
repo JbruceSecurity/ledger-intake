@@ -10,13 +10,17 @@
     .muted { color:#666; font-size: 13px; }
     input, button { font-size: 18px; padding: 12px; width: 100%; box-sizing: border-box; }
     button { cursor: pointer; }
-    .row { display:flex; gap:10px; margin-top:10px; }
-    .row > * { flex:1; }
+    .row { display:flex; gap:10px; margin-top:10px; flex-wrap: wrap; }
+    .row > * { flex:1; min-width: 160px; }
     table { width:100%; border-collapse: collapse; margin-top:12px; }
     th, td { border:1px solid #ddd; padding:8px; font-size:14px; vertical-align: top; }
     th { background:#f5f5f5; text-align:left; }
     .pill { display:inline-block; padding:3px 8px; border-radius:999px; font-size:12px; border:1px solid #ddd; }
     .msg { margin: 10px 0; font-weight: 700; }
+    .stats { display:flex; gap:10px; flex-wrap: wrap; margin-top: 8px; }
+    .stat { border:1px solid #ddd; border-radius: 12px; padding: 8px 10px; font-size: 13px; }
+    .small { font-size: 12px; }
+    .hidden { display:none; }
   </style>
 </head>
 <body>
@@ -27,16 +31,30 @@
     Door rules: ledger door wins; otherwise Grocery→56, Produce/Dairy→93, Meat/Frozen→132.
   </div>
 
+  <div class="stats" id="stats">
+    <div class="stat"><b>Total:</b> <span id="cTotal">0</span></div>
+    <div class="stat"><b>Queue:</b> <span id="cQueue">0</span></div>
+    <div class="stat"><b>Checked In:</b> <span id="cChecked">0</span></div>
+  </div>
+
   <p class="msg" id="msg"></p>
 
   <label style="display:block; margin-top:10px;">Search PO</label>
   <input id="searchPO" maxlength="5" inputmode="numeric" placeholder="Type PO digits…" />
 
   <div class="row">
+    <button id="scanBolBtn">Scan BOL (find PO)</button>
     <button id="refreshBtn">Refresh</button>
+    <button id="clearSearchBtn" type="button">Clear Search</button>
   </div>
 
+  <!-- Hidden camera/file input for BOL scanning -->
+  <input id="bolFile" class="hidden" type="file" accept="image/*" capture="environment" />
+
   <div id="tableWrap"></div>
+
+  <!-- OCR library (Tesseract.js) -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
@@ -48,6 +66,14 @@
     const tableWrap = document.getElementById("tableWrap");
     const refreshBtn = document.getElementById("refreshBtn");
     const searchPO = document.getElementById("searchPO");
+    const clearSearchBtn = document.getElementById("clearSearchBtn");
+
+    const scanBolBtn = document.getElementById("scanBolBtn");
+    const bolFile = document.getElementById("bolFile");
+
+    const cTotal = document.getElementById("cTotal");
+    const cQueue = document.getElementById("cQueue");
+    const cChecked = document.getElementById("cChecked");
 
     let lastRows = [];
 
@@ -76,7 +102,19 @@
       return ageMs <= 5 * 60 * 1000; // 5 minutes
     }
 
+    function updateCounters(rows){
+      const total = rows.length;
+      const queue = rows.filter(r => (r.status || "") === "Queue").length;
+      const checked = rows.filter(r => (r.status || "") === "Checked In").length;
+
+      cTotal.textContent = String(total);
+      cQueue.textContent = String(queue);
+      cChecked.textContent = String(checked);
+    }
+
     function render(rows){
+      updateCounters(rows);
+
       const q = (searchPO.value || "").trim();
       const view = q ? rows.filter(r => String(r.po_number || "").includes(q)) : rows;
 
@@ -141,7 +179,64 @@
 
     refreshBtn.addEventListener("click", loadRows);
     searchPO.addEventListener("input", () => render(lastRows));
+    clearSearchBtn.addEventListener("click", () => { searchPO.value = ""; render(lastRows); });
 
+    // ---- BOL Scan flow ----
+    scanBolBtn.addEventListener("click", () => {
+      msg.textContent = "Open camera / select BOL photo…";
+      bolFile.value = "";
+      bolFile.click();
+    });
+
+    bolFile.addEventListener("change", async () => {
+      const file = bolFile.files?.[0];
+      if (!file) return;
+
+      try {
+        msg.textContent = "Scanning BOL… (hold steady)";
+        const imgUrl = URL.createObjectURL(file);
+
+        // OCR
+        const result = await Tesseract.recognize(imgUrl, "eng", {
+          logger: (m) => {
+            if (m?.status === "recognizing text" && typeof m.progress === "number") {
+              msg.textContent = `Scanning BOL… ${Math.round(m.progress * 100)}%`;
+            }
+          }
+        });
+
+        URL.revokeObjectURL(imgUrl);
+
+        const text = (result?.data?.text || "").replace(/\s+/g, " ");
+        // Find 5-digit numbers (POs)
+        const matches = text.match(/\b\d{5}\b/g) || [];
+        const unique = Array.from(new Set(matches));
+
+        if (!unique.length) {
+          msg.textContent = "No 5-digit PO found. Try a clearer photo (zoom on the PO).";
+          return;
+        }
+
+        // If multiple POs detected, let officer choose
+        let chosen = unique[0];
+        if (unique.length > 1) {
+          const pick = prompt(
+            `Multiple 5-digit numbers found:\n\n${unique.join(", ")}\n\nType the correct PO:`,
+            unique[0]
+          );
+          if (pick && /^\d{5}$/.test(pick.trim())) chosen = pick.trim();
+        }
+
+        searchPO.value = chosen;
+        render(lastRows);
+        msg.textContent = `PO ${chosen} detected from BOL.`;
+
+      } catch (err) {
+        msg.textContent = `BOL scan failed: ${err?.message || err}`;
+      }
+    });
+
+    // ---- Check-in + Undo ----
     tableWrap.addEventListener("click", async (e) => {
       const btn = e.target.closest("button");
       if (!btn) return;
