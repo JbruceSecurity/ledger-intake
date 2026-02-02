@@ -25,6 +25,8 @@
     .danger { border:1px solid #f2b8b5; background:#fff5f5; padding:10px; border-radius:10px; }
     .ok { border:1px solid #bde5c8; background:#f4fff7; padding:10px; border-radius:10px; }
     .small { font-size: 12px; }
+    .stats { display:flex; gap:10px; flex-wrap: wrap; margin-top: 10px; }
+    .stat { border:1px solid #ddd; border-radius: 12px; padding: 8px 10px; font-size: 13px; }
   </style>
 </head>
 <body>
@@ -49,6 +51,12 @@
     </label>
 
     <div class="right muted small">Officer link: <a href="./board.html" target="_blank">board.html</a></div>
+  </div>
+
+  <div class="stats" id="stats">
+    <div class="stat"><b>Total:</b> <span id="cTotal">0</span></div>
+    <div class="stat"><b>Queue:</b> <span id="cQueue">0</span></div>
+    <div class="stat"><b>Checked In:</b> <span id="cChecked">0</span></div>
   </div>
 
   <p class="msg" id="msg"></p>
@@ -94,16 +102,15 @@
   <div id="tableWrap"></div>
 
   <script type="module">
-    // ====== ADMIN PIN (set yours) ======
-    const ADMIN_PIN = "1234"; // <-- set your real pin
+    // ====== ADMIN PIN ======
+    const ADMIN_PIN = "1234";
 
-    // ====== Supabase ======
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
     const SUPABASE_URL = "https://pxiigthkswhnivanndfn.supabase.co";
     const SUPABASE_KEY = "sb_publishable_fWVXeZM0mcylqczc6DWztA_Fu63kfj0";
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    // ====== PIN gate (UI-only) ======
+    // PIN gate (UI-only)
     if (sessionStorage.getItem("admin_ok") !== "1") {
       const entered = prompt("Admin PIN:");
       if (entered !== ADMIN_PIN) {
@@ -114,7 +121,6 @@
       }
     }
 
-    // ====== Elements ======
     const msg = document.getElementById("msg");
     const form = document.getElementById("form");
     const tableWrap = document.getElementById("tableWrap");
@@ -124,6 +130,10 @@
     const showArchived = document.getElementById("showArchived");
     const clearBtn = document.getElementById("clearBtn");
     const search = document.getElementById("search");
+
+    const cTotal = document.getElementById("cTotal");
+    const cQueue = document.getElementById("cQueue");
+    const cChecked = document.getElementById("cChecked");
 
     const po = document.getElementById("po");
     const carrier = document.getElementById("carrier");
@@ -145,7 +155,6 @@
     }
 
     function instructionDoor(r){
-      // ledger door wins; else default by dept
       return (r.ledger_door || "").trim() || defaultDoorForDept(r.department);
     }
 
@@ -154,7 +163,19 @@
       return d ? `Check in at Door ${d}` : "Check in (door not set)";
     }
 
+    function updateCounters(rows){
+      const total = rows.length;
+      const queue = rows.filter(r => (r.status || "") === "Queue").length;
+      const checked = rows.filter(r => (r.status || "") === "Checked In").length;
+
+      cTotal.textContent = String(total);
+      cQueue.textContent = String(queue);
+      cChecked.textContent = String(checked);
+    }
+
     function render(rows){
+      updateCounters(rows);
+
       const q = (search.value || "").trim();
       const view = q ? rows.filter(r => String(r.po_number || "").includes(q)) : rows;
 
@@ -208,11 +229,7 @@
       msg.textContent = "Loading…";
 
       const includeArchived = showArchived.checked;
-      let q = supabase
-        .from("trucks")
-        .select("*")
-        .order("last_updated", { ascending: false });
-
+      let q = supabase.from("trucks").select("*").order("last_updated", { ascending: false });
       if (!includeArchived) q = q.eq("archived", false);
 
       const { data, error } = await q;
@@ -286,15 +303,11 @@
       await loadRows();
     });
 
-    // Search
     search.addEventListener("input", () => render(lastRows));
-
-    // Buttons
     refreshBtn.addEventListener("click", loadRows);
     clearBtn.addEventListener("click", clearForm);
     showArchived.addEventListener("change", loadRows);
 
-    // Archive (8 hours) — requires the SQL function you created
     archiveBtn.addEventListener("click", async () => {
       msg.textContent = "Archiving…";
       const { error } = await supabase.rpc("archive_old_trucks", { hours_old: 8 });
@@ -303,9 +316,8 @@
       await loadRows();
     });
 
-    // Export CSV (Leadership)
     exportBtn.addEventListener("click", () => {
-      const rows = lastRows.slice(); // currently loaded
+      const rows = lastRows.slice();
       const headers = [
         "po_number","carrier","shipper","department","ledger_door","instruction_door","status",
         "last_updated","archived","archived_at","notes"
@@ -342,7 +354,6 @@
       msg.textContent = "CSV downloaded.";
     });
 
-    // Table actions: edit/delete/restore
     tableWrap.addEventListener("click", async (e) => {
       const btn = e.target.closest("button");
       if (!btn) return;
@@ -385,7 +396,6 @@
       }
     });
 
-    // Initial load
     loadRows();
   </script>
 </body>
