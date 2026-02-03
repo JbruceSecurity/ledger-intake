@@ -125,7 +125,6 @@
           <thead>
             <tr>
               <th>PO</th>
-              <th>Carrier</th>
               <th>Dept</th>
               <th>Status</th>
               <th>Instruction</th>
@@ -144,7 +143,6 @@
               return `
                 <tr>
                   <td><b>${r.po_number || ""}</b></td>
-                  <td>${r.carrier || ""}</td>
                   <td>${r.department || ""}</td>
                   <td>${pill(r.status || "")}</td>
                   <td>${instructionText(r)}</td>
@@ -186,7 +184,6 @@
     });
 
     function extractFiveDigitCandidatesWithContext(text) {
-      // keep the original spacing as much as possible for context scoring
       const normalized = (text || "").replace(/\r/g, "\n");
       const re = /\b(\d{5})\b/g;
       const hits = [];
@@ -198,29 +195,24 @@
     }
 
     function scoreByPOKeywordsAround(normalizedText, idx) {
-      // look around the digits for PO keywords
       const windowSize = 90;
       const start = Math.max(0, idx - windowSize);
       const end = Math.min(normalizedText.length, idx + 5 + windowSize);
       const ctx = normalizedText.slice(start, end).toLowerCase().replace(/\s+/g, " ");
 
-      // strong indicators
       const strong = [
         "po#", "po #", "p.o.", "p.o", "p.o#", "p.o #",
         "purchase order", "customer po", "cust po", "po number", "po no", "po num"
       ];
-      // mild
       const mild = [" po ", " p.o "];
 
       let score = 0;
 
-      // direct pattern boosts
       if (ctx.match(/(po|p\.o\.|purchase order|customer po|cust po)[^0-9]{0,12}\d{5}/)) score += 15;
 
       for (const s of strong) if (ctx.includes(s)) score += 8;
       for (const m of mild) if (ctx.includes(m)) score += 3;
 
-      // weak penalties for address-ish context (zip/address noise)
       const negatives = ["zip", "zipcode", "address", "st ", "ave", "rd ", "blvd", "suite", "phone", "tel"];
       for (const n of negatives) if (ctx.includes(n)) score -= 4;
 
@@ -228,24 +220,21 @@
     }
 
     function chooseBestPOFromOCR(ocrText, rows) {
-      // Only guess from POs that are currently Queue (your requirement)
       const queueSet = new Set(
         rows.filter(r => (r.status || "") === "Queue").map(r => String(r.po_number || ""))
       );
 
       const { normalized, hits } = extractFiveDigitCandidatesWithContext(ocrText);
 
-      // Count candidates, but keep only those present in Queue
       const scored = [];
       for (const h of hits) {
-        if (!queueSet.has(h.po)) continue; // key rule: must be in Queue
+        if (!queueSet.has(h.po)) continue;
         const score = scoreByPOKeywordsAround(normalized, h.idx);
         scored.push({ po: h.po, score });
       }
 
       if (!scored.length) return { best: null, ranked: [] };
 
-      // Deduplicate by keeping max score per PO
       const bestByPO = new Map();
       for (const s of scored) {
         const prev = bestByPO.get(s.po);
@@ -253,8 +242,6 @@
       }
 
       const ranked = Array.from(bestByPO.values()).sort((a,b) => b.score - a.score);
-
-      // If the top result is weak, still pick it, but we can optionally ask
       const best = ranked[0];
       return { best: best.po, ranked };
     }
@@ -281,12 +268,9 @@
         const chosen = chooseBestPOFromOCR(text, lastRows);
 
         if (chosen.best) {
-          // If multiple queue POs exist on the BOL, we auto-pick the best keyword match.
-          // If you want a picker sometimes, we can add it later, but you asked to guess.
           searchPO.value = chosen.best;
           render(lastRows);
 
-          // helpful message if multiple were detected
           if (chosen.ranked.length > 1) {
             const top3 = chosen.ranked.slice(0,3).map(x => `${x.po}`).join(", ");
             msg.textContent = `Guessed PO ${chosen.best} (from Queue). Top matches: ${top3}`;
@@ -296,7 +280,6 @@
           return;
         }
 
-        // No Queue PO found in the scanned page
         msg.innerHTML = `<span class="dangerText">NO QUEUE PO FOUND ON BOL — Try a clearer photo.</span>`;
 
       } catch (err) {
