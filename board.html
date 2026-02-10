@@ -15,25 +15,16 @@
     table { width:100%; border-collapse: collapse; margin-top:12px; }
     th, td { border:1px solid #ddd; padding:8px; font-size:14px; vertical-align: top; }
     th { background:#f5f5f5; text-align:left; }
-    .pill { display:inline-block; padding:3px 8px; border-radius:999px; font-size:12px; border:1px solid #ddd; }
     .msg { margin: 10px 0; font-weight: 800; }
-    .stats { display:flex; gap:10px; flex-wrap: wrap; margin-top: 8px; }
-    .stat { border:1px solid #ddd; border-radius: 12px; padding: 8px 10px; font-size: 13px; }
     .hidden { display:none; }
     .dangerText { color:#b00020; font-weight: 900; font-size: 18px; }
+    .okText { color:#0b6b2a; font-weight: 900; }
   </style>
 </head>
 <body>
   <h1>Officer Board</h1>
   <div class="muted">
-    Search PO → verify instruction → tap <b>Checked In</b>. Undo is available for 5 minutes after check-in.
-    Door rules: ledger door wins; otherwise Grocery→56, Produce/Dairy→93, Meat/Frozen→132.
-  </div>
-
-  <div class="stats">
-    <div class="stat"><b>Total:</b> <span id="cTotal">0</span></div>
-    <div class="stat"><b>Queue:</b> <span id="cQueue">0</span></div>
-    <div class="stat"><b>Checked In:</b> <span id="cChecked">0</span></div>
+    Search PO or scan BOL → confirm Door + Dept → tap <b>Check In</b>.
   </div>
 
   <p class="msg" id="msg"></p>
@@ -57,6 +48,7 @@
 
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
     const SUPABASE_URL = "https://pxiigthkswhnivanndfn.supabase.co";
     const SUPABASE_KEY = "sb_publishable_fWVXeZM0mcylqczc6DWztA_Fu63kfj0";
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -69,13 +61,7 @@
     const scanBolBtn = document.getElementById("scanBolBtn");
     const bolFile = document.getElementById("bolFile");
 
-    const cTotal = document.getElementById("cTotal");
-    const cQueue = document.getElementById("cQueue");
-    const cChecked = document.getElementById("cChecked");
-
     let lastRows = [];
-
-    function pill(t){ return `<span class="pill">${t}</span>`; }
 
     function defaultDoorForDept(dept){
       if (dept === "Grocery") return "56";
@@ -84,39 +70,19 @@
       return "";
     }
 
-    function instructionDoor(r){
+    // Door to DISPLAY (actual door to use):
+    // - if ledger door exists, use it
+    // - else default door by dept
+    function doorToUse(r){
       return (r.ledger_door || "").trim() || defaultDoorForDept(r.department);
     }
 
-    function instructionText(r){
-      const d = instructionDoor(r);
-      return d ? `Check in at Door ${d}` : "Check in (door not set)";
-    }
-
-    function canUndo(r) {
-      if ((r.status || "") !== "Checked In") return false;
-      if (!r.last_updated) return false;
-      const ageMs = Date.now() - new Date(r.last_updated).getTime();
-      return ageMs <= 5 * 60 * 1000; // 5 minutes
-    }
-
-    function updateCounters(rows){
-      const total = rows.length;
-      const queue = rows.filter(r => (r.status || "") === "Queue").length;
-      const checked = rows.filter(r => (r.status || "") === "Checked In").length;
-      cTotal.textContent = String(total);
-      cQueue.textContent = String(queue);
-      cChecked.textContent = String(checked);
-    }
-
     function render(rows){
-      updateCounters(rows);
-
       const q = (searchPO.value || "").trim();
       const view = q ? rows.filter(r => String(r.po_number || "").includes(q)) : rows;
 
       if (!view.length){
-        tableWrap.innerHTML = "<p class='muted'>No matching rows.</p>";
+        tableWrap.innerHTML = "<p class='muted'>No matching Queue POs.</p>";
         return;
       }
 
@@ -125,28 +91,22 @@
           <thead>
             <tr>
               <th>PO</th>
-              <th>Dept</th>
-              <th>Status</th>
-              <th>Instruction</th>
-              <th>Action</th>
+              <th>Door</th>
+              <th>Department</th>
+              <th>Check In</th>
             </tr>
           </thead>
           <tbody>
             ${view.map(r => {
-              const canCheckIn = (r.status === "Queue");
-              const undoOk = canUndo(r);
-
-              let actionHtml = `<button disabled>Done</button>`;
-              if (canCheckIn) actionHtml = `<button data-checkin="${r.id}">Checked In</button>`;
-              else if (undoOk) actionHtml = `<button data-undo="${r.id}">Undo</button>`;
-
+              const door = doorToUse(r) || "—";
               return `
                 <tr>
                   <td><b>${r.po_number || ""}</b></td>
+                  <td><b>${door}</b></td>
                   <td>${r.department || ""}</td>
-                  <td>${pill(r.status || "")}</td>
-                  <td>${instructionText(r)}</td>
-                  <td>${actionHtml}</td>
+                  <td>
+                    <button data-checkin="${r.id}">Check In</button>
+                  </td>
                 </tr>
               `;
             }).join("")}
@@ -155,28 +115,30 @@
       `;
     }
 
-    async function loadRows(){
+    async function loadQueueRows(){
       msg.textContent = "Loading…";
       const { data, error } = await supabase
         .from("trucks")
         .select("*")
         .eq("archived", false)
+        .eq("status", "Queue")
         .order("last_updated", { ascending: false });
 
       if (error){
         msg.textContent = `Load error: ${error.message}`;
         return;
       }
-      msg.textContent = "";
+
       lastRows = data || [];
+      msg.textContent = "";
       render(lastRows);
     }
 
-    refreshBtn.addEventListener("click", loadRows);
+    refreshBtn.addEventListener("click", loadQueueRows);
     searchPO.addEventListener("input", () => render(lastRows));
     clearSearchBtn.addEventListener("click", () => { searchPO.value = ""; render(lastRows); });
 
-    // ---- BOL Scan (whole page) ----
+    // ----- BOL Scan: whole page, guess from Queue POs only -----
     scanBolBtn.addEventListener("click", () => {
       msg.textContent = "Open camera / select full BOL photo…";
       bolFile.value = "";
@@ -200,50 +162,43 @@
       const end = Math.min(normalizedText.length, idx + 5 + windowSize);
       const ctx = normalizedText.slice(start, end).toLowerCase().replace(/\s+/g, " ");
 
-      const strong = [
-        "po#", "po #", "p.o.", "p.o", "p.o#", "p.o #",
-        "purchase order", "customer po", "cust po", "po number", "po no", "po num"
-      ];
-      const mild = [" po ", " p.o "];
-
       let score = 0;
 
+      // Strong PO patterns
       if (ctx.match(/(po|p\.o\.|purchase order|customer po|cust po)[^0-9]{0,12}\d{5}/)) score += 15;
 
+      const strong = ["po#", "po #", "p.o.", "p.o", "purchase order", "customer po", "cust po", "po number", "po no"];
       for (const s of strong) if (ctx.includes(s)) score += 8;
-      for (const m of mild) if (ctx.includes(m)) score += 3;
 
+      // Mild hint
+      if (ctx.includes(" po ")) score += 3;
+
+      // Penalties for address-ish context
       const negatives = ["zip", "zipcode", "address", "st ", "ave", "rd ", "blvd", "suite", "phone", "tel"];
       for (const n of negatives) if (ctx.includes(n)) score -= 4;
 
       return score;
     }
 
-    function chooseBestPOFromOCR(ocrText, rows) {
-      const queueSet = new Set(
-        rows.filter(r => (r.status || "") === "Queue").map(r => String(r.po_number || ""))
-      );
-
+    function chooseBestPOFromOCR(ocrText, queueRows) {
+      const queueSet = new Set(queueRows.map(r => String(r.po_number || "")));
       const { normalized, hits } = extractFiveDigitCandidatesWithContext(ocrText);
 
       const scored = [];
       for (const h of hits) {
-        if (!queueSet.has(h.po)) continue;
-        const score = scoreByPOKeywordsAround(normalized, h.idx);
-        scored.push({ po: h.po, score });
+        if (!queueSet.has(h.po)) continue; // must exist in Queue
+        scored.push({ po: h.po, score: scoreByPOKeywordsAround(normalized, h.idx) });
       }
+      if (!scored.length) return null;
 
-      if (!scored.length) return { best: null, ranked: [] };
-
+      // keep best score per PO
       const bestByPO = new Map();
       for (const s of scored) {
         const prev = bestByPO.get(s.po);
         if (!prev || s.score > prev.score) bestByPO.set(s.po, s);
       }
-
       const ranked = Array.from(bestByPO.values()).sort((a,b) => b.score - a.score);
-      const best = ranked[0];
-      return { best: best.po, ranked };
+      return ranked[0]?.po || null;
     }
 
     bolFile.addEventListener("change", async () => {
@@ -251,7 +206,7 @@
       if (!file) return;
 
       try {
-        msg.textContent = "Scanning full BOL… (hold steady)";
+        msg.textContent = "Scanning full BOL…";
         const imgUrl = URL.createObjectURL(file);
 
         const result = await Tesseract.recognize(imgUrl, "eng", {
@@ -265,70 +220,46 @@
         URL.revokeObjectURL(imgUrl);
 
         const text = (result?.data?.text || "");
-        const chosen = chooseBestPOFromOCR(text, lastRows);
+        const best = chooseBestPOFromOCR(text, lastRows);
 
-        if (chosen.best) {
-          searchPO.value = chosen.best;
+        if (best) {
+          searchPO.value = best;
           render(lastRows);
-
-          if (chosen.ranked.length > 1) {
-            const top3 = chosen.ranked.slice(0,3).map(x => `${x.po}`).join(", ");
-            msg.textContent = `Guessed PO ${chosen.best} (from Queue). Top matches: ${top3}`;
-          } else {
-            msg.textContent = `Guessed PO ${chosen.best} (from Queue).`;
-          }
-          return;
+          msg.innerHTML = `<span class="okText">Guessed PO ${best} (from Queue).</span>`;
+        } else {
+          msg.innerHTML = `<span class="dangerText">NO QUEUE PO FOUND ON BOL — Try a clearer photo.</span>`;
         }
-
-        msg.innerHTML = `<span class="dangerText">NO QUEUE PO FOUND ON BOL — Try a clearer photo.</span>`;
 
       } catch (err) {
         msg.innerHTML = `<span class="dangerText">BOL scan failed: ${err?.message || err}</span>`;
       }
     });
 
-    // ---- Check-in + Undo ----
+    // ----- Check In -----
     tableWrap.addEventListener("click", async (e) => {
       const btn = e.target.closest("button");
       if (!btn) return;
 
       const checkId = btn.getAttribute("data-checkin");
-      const undoId = btn.getAttribute("data-undo");
+      if (!checkId) return;
 
-      if (checkId) {
-        msg.textContent = "Saving…";
-        const { error } = await supabase
-          .from("trucks")
-          .update({ status: "Checked In", last_updated: new Date().toISOString() })
-          .eq("id", checkId);
+      msg.textContent = "Saving…";
+      const { error } = await supabase
+        .from("trucks")
+        .update({ status: "Checked In", last_updated: new Date().toISOString() })
+        .eq("id", checkId);
 
-        if (error){
-          msg.textContent = `Save error: ${error.message}`;
-          return;
-        }
-        msg.textContent = "Checked in.";
-        await loadRows();
+      if (error) {
+        msg.textContent = `Save error: ${error.message}`;
         return;
       }
 
-      if (undoId) {
-        msg.textContent = "Undoing…";
-        const { error } = await supabase
-          .from("trucks")
-          .update({ status: "Queue", last_updated: new Date().toISOString() })
-          .eq("id", undoId);
-
-        if (error){
-          msg.textContent = `Undo error: ${error.message}`;
-          return;
-        }
-        msg.textContent = "Restored to Queue.";
-        await loadRows();
-      }
+      msg.textContent = "Checked in.";
+      await loadQueueRows();
     });
 
-    loadRows();
-    setInterval(loadRows, 20000);
+    loadQueueRows();
+    setInterval(loadQueueRows, 20000);
   </script>
 </body>
 </html>
