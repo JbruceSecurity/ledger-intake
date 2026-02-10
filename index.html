@@ -19,7 +19,6 @@
       user-select: none;
     }
     .tab.active { background:#111; color:#fff; border-color:#111; }
-    .row { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
     label { display:block; font-size:14px; margin:10px 0 6px; }
     input, button { width:100%; font-size:16px; padding:10px; box-sizing: border-box; }
     button { cursor:pointer; }
@@ -39,7 +38,8 @@
   <div>
     <h1 style="margin:0;">Ledger Intake (Admin)</h1>
     <div class="muted">
-      Each tab matches a warehouse ledger page. Enter POs fast: type → press <b>Enter</b> → repeat.
+      Each tab matches a warehouse ledger page.  
+      Type PO → press <b>Enter</b> → repeat.
     </div>
   </div>
   <div class="right muted mini">
@@ -61,16 +61,8 @@
   <label>PO Number (5 digits)</label>
   <input id="po" maxlength="5" inputmode="numeric" placeholder="12345" required />
 
-  <div class="row">
-    <div>
-      <label>Carrier (optional)</label>
-      <input id="carrier" placeholder="e.g. Swift" />
-    </div>
-    <div>
-      <label>Ledger Door (optional)</label>
-      <input id="ledgerDoor" placeholder="e.g. 12 (leave blank if none)" />
-    </div>
-  </div>
+  <label>Ledger Door (optional)</label>
+  <input id="ledgerDoor" placeholder="e.g. 12 (leave blank if none)" />
 
   <button type="submit">Add PO to Ledger</button>
 </form>
@@ -82,170 +74,4 @@
   import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
   const SUPABASE_URL = "https://pxiigthkswhnivanndfn.supabase.co";
-  const SUPABASE_KEY = "sb_publishable_fWVXeZM0mcylqczc6DWztA_Fu63kfj0";
-  const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-
-  const tabs = document.getElementById("tabs");
-  const form = document.getElementById("form");
-  const msg = document.getElementById("msg");
-  const tableWrap = document.getElementById("tableWrap");
-
-  const po = document.getElementById("po");
-  const carrier = document.getElementById("carrier");
-  const ledgerDoor = document.getElementById("ledgerDoor");
-
-  let currentDept = "Grocery";
-  let rows = [];
-
-  function defaultDoor(dept) {
-    if (dept === "Grocery") return "56";
-    if (dept === "Produce/Dairy") return "93";
-    if (dept === "Meat/Frozen") return "132";
-    return "";
-  }
-
-  function doorToUse(r) {
-    return (r.ledger_door || "").trim() || defaultDoor(r.department);
-  }
-
-  // Wording requested:
-  // - assigned door => "Back in to Door X"
-  // - empty door => "Walk through → Door default"
-  function instructionText(r) {
-    const hasLedgerDoor = !!((r.ledger_door || "").trim());
-    const d = doorToUse(r);
-    if (!d) return "—";
-    return hasLedgerDoor ? `Back in to Door ${d}` : `Walk through → Door ${d}`;
-  }
-
-  function render() {
-    if (!rows.length) {
-      tableWrap.innerHTML = "<p class='muted'>No POs added yet for this department.</p>";
-      return;
-    }
-
-    tableWrap.innerHTML = `
-      <table>
-        <thead>
-          <tr>
-            <th>PO</th>
-            <th>Carrier</th>
-            <th>Door</th>
-            <th>Instruction</th>
-            <th>Status</th>
-            <th>Updated</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows.map(r => {
-            const updated = r.last_updated ? new Date(r.last_updated).toLocaleString() : "";
-            return `
-              <tr>
-                <td><b>${r.po_number || ""}</b></td>
-                <td>${r.carrier || ""}</td>
-                <td><b>${doorToUse(r) || "—"}</b></td>
-                <td>${instructionText(r)}</td>
-                <td><span class="pill">${r.status || ""}</span></td>
-                <td>${updated}</td>
-              </tr>
-            `;
-          }).join("")}
-        </tbody>
-      </table>
-    `;
-  }
-
-  async function loadRows() {
-    msg.textContent = "Loading…";
-
-    const { data, error } = await supabase
-      .from("trucks")
-      .select("*")
-      .eq("department", currentDept)
-      .eq("archived", false)
-      .order("last_updated", { ascending: false });
-
-    if (error) {
-      msg.textContent = `Load error: ${error.message}`;
-      return;
-    }
-
-    rows = data || [];
-    msg.textContent = "";
-    render();
-  }
-
-  function setActiveTab(dept) {
-    currentDept = dept;
-    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-    document.querySelector(`.tab[data-dept="${dept}"]`)?.classList.add("active");
-    loadRows();
-    po.focus();
-  }
-
-  // Tabs click
-  tabs.addEventListener("click", (e) => {
-    const tab = e.target.closest(".tab");
-    if (!tab) return;
-    setActiveTab(tab.dataset.dept);
-  });
-
-  // ENTER anywhere in the form submits immediately
-  form.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      form.requestSubmit();
-    }
-  });
-
-  // Submit handler
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    msg.textContent = "";
-
-    const poVal = po.value.trim();
-    if (!/^\d{5}$/.test(poVal)) {
-      msg.textContent = "PO must be exactly 5 digits.";
-      po.focus();
-      return;
-    }
-
-    msg.textContent = "Saving…";
-
-    const payload = {
-      po_number: poVal,
-      carrier: carrier.value.trim() || null,
-      ledger_door: ledgerDoor.value.trim() || null,
-      department: currentDept,
-      status: "Queue",
-      archived: false,
-      last_updated: new Date().toISOString()
-    };
-
-    const { error } = await supabase.from("trucks").insert([payload]);
-
-    if (error) {
-      msg.textContent = `Save error: ${error.message}`;
-      po.focus();
-      return;
-    }
-
-    // Clear for fast entry
-    po.value = "";
-    carrier.value = "";
-    ledgerDoor.value = "";
-
-    msg.textContent = "PO added.";
-    await loadRows();
-
-    // Ready for next entry
-    po.focus();
-  });
-
-  // Initial
-  loadRows();
-  po.focus();
-</script>
-
-</body>
-</html>
+  const SUPABASE_KEY
