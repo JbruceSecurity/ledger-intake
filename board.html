@@ -6,62 +6,88 @@
   <title>Officer Board</title>
   <style>
     body { font-family: -apple-system, system-ui, Arial; padding: 14px; max-width: 1100px; margin: 0 auto; }
-    h1 { margin: 0 0 10px; }
+    h1 { margin: 0 0 6px; }
     .muted { color:#666; font-size: 13px; }
     input, button { font-size: 18px; padding: 12px; width: 100%; box-sizing: border-box; }
     button { cursor: pointer; }
     .row { display:flex; gap:10px; margin-top:10px; flex-wrap: wrap; }
-    .row > * { flex:1; min-width: 160px; }
+    .row > * { flex:1; min-width: 180px; }
     table { width:100%; border-collapse: collapse; margin-top:12px; }
     th, td { border:1px solid #ddd; padding:8px; font-size:14px; vertical-align: top; }
     th { background:#f5f5f5; text-align:left; }
+    .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; border:1px solid #ddd; }
     .msg { margin: 10px 0; font-weight: 800; }
-    .hidden { display:none; }
-    .dangerText { color:#b00020; font-weight: 900; font-size: 18px; }
-    .okText { color:#0b6b2a; font-weight: 900; }
+    .ok { color:#0b6b2f; }
+    .bad { color:#b00020; }
+    .countbar { display:flex; gap:10px; flex-wrap: wrap; align-items:center; margin-top: 10px; }
+    .count { background:#f5f5f5; border:1px solid #ddd; padding:8px 10px; border-radius:999px; font-weight:800; }
+    .scanbox { border:1px dashed #aaa; padding:12px; border-radius:12px; margin-top:12px; }
+    .matches { margin-top:10px; }
+    .match { border:1px solid #ddd; padding:10px; border-radius:12px; margin-top:8px; display:flex; gap:10px; align-items:center; }
+    .match > div { flex:1; }
+    .match button { width:auto; }
   </style>
 </head>
 <body>
   <h1>Officer Board</h1>
   <div class="muted">
-    Search PO or scan BOL → confirm Door + Dept → tap <b>Check In</b>.
+    Search POs. Use Check In when driver is confirmed.
+    <br/>Door wording: <b>Assigned ledger door</b> → <b>Back In</b>. Blank ledger door → <b>Walk Through</b>.
+  </div>
+
+  <div class="countbar">
+    <span class="count" id="countQueue">Queue: 0</span>
+    <span class="count" id="countChecked">Checked In: 0</span>
+  </div>
+
+  <div class="row">
+    <input id="search" maxlength="5" inputmode="numeric" placeholder="Search PO digits…" />
+    <button id="refreshBtn" type="button">Refresh</button>
+  </div>
+
+  <div class="scanbox">
+    <b>Scan BOL (whole page photo)</b>
+    <div class="muted" style="margin-top:6px;">
+      This will extract all 5-digit numbers and match against POs currently in <b>Queue</b>.
+      If no match is found, you’ll get a red message (no need to radio admin).
+    </div>
+    <div class="row">
+      <input id="bolFile" type="file" accept="image/*" capture="environment" />
+      <button id="scanBtn" type="button">Scan</button>
+    </div>
+    <p class="msg" id="scanMsg"></p>
+    <div class="matches" id="matches"></div>
   </div>
 
   <p class="msg" id="msg"></p>
-
-  <label style="display:block; margin-top:10px;">Search PO</label>
-  <input id="searchPO" maxlength="5" inputmode="numeric" placeholder="Type PO digits…" />
-
-  <div class="row">
-    <button id="scanBolBtn">Scan BOL (auto-find PO)</button>
-    <button id="refreshBtn">Refresh</button>
-    <button id="clearSearchBtn" type="button">Clear Search</button>
-  </div>
-
-  <!-- Hidden camera/file input -->
-  <input id="bolFile" class="hidden" type="file" accept="image/*" capture="environment" />
-
   <div id="tableWrap"></div>
-
-  <!-- OCR library -->
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-
     const SUPABASE_URL = "https://pxiigthkswhnivanndfn.supabase.co";
     const SUPABASE_KEY = "sb_publishable_fWVXeZM0mcylqczc6DWztA_Fu63kfj0";
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    const msg = document.getElementById("msg");
-    const tableWrap = document.getElementById("tableWrap");
+    const search = document.getElementById("search");
     const refreshBtn = document.getElementById("refreshBtn");
-    const searchPO = document.getElementById("searchPO");
-    const clearSearchBtn = document.getElementById("clearSearchBtn");
-    const scanBolBtn = document.getElementById("scanBolBtn");
-    const bolFile = document.getElementById("bolFile");
+    const tableWrap = document.getElementById("tableWrap");
+    const msg = document.getElementById("msg");
 
-    let lastRows = [];
+    const countQueue = document.getElementById("countQueue");
+    const countChecked = document.getElementById("countChecked");
+
+    const bolFile = document.getElementById("bolFile");
+    const scanBtn = document.getElementById("scanBtn");
+    const scanMsg = document.getElementById("scanMsg");
+    const matchesEl = document.getElementById("matches");
+
+    let rows = [];
+
+    function pill(t){ return `<span class="pill">${t}</span>`; }
+    function setMsg(el, text, kind=""){
+      el.className = "msg " + (kind || "");
+      el.textContent = text || "";
+    }
 
     function defaultDoorForDept(dept){
       if (dept === "Grocery") return "56";
@@ -70,19 +96,39 @@
       return "";
     }
 
-    // Door to DISPLAY (actual door to use):
-    // - if ledger door exists, use it
-    // - else default door by dept
-    function doorToUse(r){
-      return (r.ledger_door || "").trim() || defaultDoorForDept(r.department);
+    function instruction(r){
+      const ld = (r.ledger_door || "").trim();
+      if (ld) return `Back In to Door ${ld}`;
+      const d = defaultDoorForDept(r.department);
+      return `Walk Through (Door ${d})`;
     }
 
-    function render(rows){
-      const q = (searchPO.value || "").trim();
-      const view = q ? rows.filter(r => String(r.po_number || "").includes(q)) : rows;
+    function doorNumber(r){
+      const ld = (r.ledger_door || "").trim();
+      if (ld) return ld;
+      return defaultDoorForDept(r.department);
+    }
+
+    function updateCounts(allRows){
+      const active = allRows.filter(r => !r.archived);
+      const q = active.filter(r => (r.status||"") === "Queue").length;
+      const c = active.filter(r => (r.status||"") === "Checked In").length;
+      countQueue.textContent = `Queue: ${q}`;
+      countChecked.textContent = `Checked In: ${c}`;
+    }
+
+    function render(allRows){
+      updateCounts(allRows);
+
+      const q = (search.value || "").trim();
+      let view = allRows.filter(r => !r.archived);
+
+      // Officer view: focus on Queue first, newest first
+      view = view.sort((a,b) => (b.last_updated||"").localeCompare(a.last_updated||""));
+      if (q) view = view.filter(r => String(r.po_number||"").includes(q));
 
       if (!view.length){
-        tableWrap.innerHTML = "<p class='muted'>No matching Queue POs.</p>";
+        tableWrap.innerHTML = `<p class="muted">No rows.</p>`;
         return;
       }
 
@@ -93,173 +139,153 @@
               <th>PO</th>
               <th>Door</th>
               <th>Department</th>
+              <th>Status</th>
               <th>Check In</th>
             </tr>
           </thead>
           <tbody>
-            ${view.map(r => {
-              const door = doorToUse(r) || "—";
-              return `
-                <tr>
-                  <td><b>${r.po_number || ""}</b></td>
-                  <td><b>${door}</b></td>
-                  <td>${r.department || ""}</td>
-                  <td>
-                    <button data-checkin="${r.id}">Check In</button>
-                  </td>
-                </tr>
-              `;
-            }).join("")}
+            ${view.map(r => `
+              <tr>
+                <td><b>${r.po_number||""}</b></td>
+                <td>${doorNumber(r)}<div class="muted">${instruction(r)}</div></td>
+                <td>${r.department||""}</td>
+                <td>${pill(r.status||"")}</td>
+                <td>
+                  ${(r.status==="Checked In")
+                    ? `<span class="muted">Done</span>`
+                    : `<button data-checkin="${r.id}">Check In</button>`
+                  }
+                </td>
+              </tr>
+            `).join("")}
           </tbody>
         </table>
       `;
     }
 
-    async function loadQueueRows(){
-      msg.textContent = "Loading…";
+    async function loadRows(){
+      setMsg(msg, "Loading…");
       const { data, error } = await supabase
         .from("trucks")
         .select("*")
-        .eq("archived", false)
-        .eq("status", "Queue")
         .order("last_updated", { ascending: false });
 
-      if (error){
-        msg.textContent = `Load error: ${error.message}`;
-        return;
-      }
-
-      lastRows = data || [];
-      msg.textContent = "";
-      render(lastRows);
+      if (error) return setMsg(msg, `Load error: ${error.message}`, "bad");
+      rows = data || [];
+      setMsg(msg, "");
+      render(rows);
     }
 
-    refreshBtn.addEventListener("click", loadQueueRows);
-    searchPO.addEventListener("input", () => render(lastRows));
-    clearSearchBtn.addEventListener("click", () => { searchPO.value = ""; render(lastRows); });
-
-    // ----- BOL Scan: whole page, guess from Queue POs only -----
-    scanBolBtn.addEventListener("click", () => {
-      msg.textContent = "Open camera / select full BOL photo…";
-      bolFile.value = "";
-      bolFile.click();
-    });
-
-    function extractFiveDigitCandidatesWithContext(text) {
-      const normalized = (text || "").replace(/\r/g, "\n");
-      const re = /\b(\d{5})\b/g;
-      const hits = [];
-      let m;
-      while ((m = re.exec(normalized)) !== null) {
-        hits.push({ po: m[1], idx: m.index });
-      }
-      return { normalized, hits };
-    }
-
-    function scoreByPOKeywordsAround(normalizedText, idx) {
-      const windowSize = 90;
-      const start = Math.max(0, idx - windowSize);
-      const end = Math.min(normalizedText.length, idx + 5 + windowSize);
-      const ctx = normalizedText.slice(start, end).toLowerCase().replace(/\s+/g, " ");
-
-      let score = 0;
-
-      // Strong PO patterns
-      if (ctx.match(/(po|p\.o\.|purchase order|customer po|cust po)[^0-9]{0,12}\d{5}/)) score += 15;
-
-      const strong = ["po#", "po #", "p.o.", "p.o", "purchase order", "customer po", "cust po", "po number", "po no"];
-      for (const s of strong) if (ctx.includes(s)) score += 8;
-
-      // Mild hint
-      if (ctx.includes(" po ")) score += 3;
-
-      // Penalties for address-ish context
-      const negatives = ["zip", "zipcode", "address", "st ", "ave", "rd ", "blvd", "suite", "phone", "tel"];
-      for (const n of negatives) if (ctx.includes(n)) score -= 4;
-
-      return score;
-    }
-
-    function chooseBestPOFromOCR(ocrText, queueRows) {
-      const queueSet = new Set(queueRows.map(r => String(r.po_number || "")));
-      const { normalized, hits } = extractFiveDigitCandidatesWithContext(ocrText);
-
-      const scored = [];
-      for (const h of hits) {
-        if (!queueSet.has(h.po)) continue; // must exist in Queue
-        scored.push({ po: h.po, score: scoreByPOKeywordsAround(normalized, h.idx) });
-      }
-      if (!scored.length) return null;
-
-      // keep best score per PO
-      const bestByPO = new Map();
-      for (const s of scored) {
-        const prev = bestByPO.get(s.po);
-        if (!prev || s.score > prev.score) bestByPO.set(s.po, s);
-      }
-      const ranked = Array.from(bestByPO.values()).sort((a,b) => b.score - a.score);
-      return ranked[0]?.po || null;
-    }
-
-    bolFile.addEventListener("change", async () => {
-      const file = bolFile.files?.[0];
-      if (!file) return;
-
-      try {
-        msg.textContent = "Scanning full BOL…";
-        const imgUrl = URL.createObjectURL(file);
-
-        const result = await Tesseract.recognize(imgUrl, "eng", {
-          logger: (m) => {
-            if (m?.status === "recognizing text" && typeof m.progress === "number") {
-              msg.textContent = `Scanning full BOL… ${Math.round(m.progress * 100)}%`;
-            }
-          }
-        });
-
-        URL.revokeObjectURL(imgUrl);
-
-        const text = (result?.data?.text || "");
-        const best = chooseBestPOFromOCR(text, lastRows);
-
-        if (best) {
-          searchPO.value = best;
-          render(lastRows);
-          msg.innerHTML = `<span class="okText">Guessed PO ${best} (from Queue).</span>`;
-        } else {
-          msg.innerHTML = `<span class="dangerText">NO QUEUE PO FOUND ON BOL — Try a clearer photo.</span>`;
-        }
-
-      } catch (err) {
-        msg.innerHTML = `<span class="dangerText">BOL scan failed: ${err?.message || err}</span>`;
-      }
-    });
-
-    // ----- Check In -----
+    // Check in action
     tableWrap.addEventListener("click", async (e) => {
       const btn = e.target.closest("button");
       if (!btn) return;
+      const id = btn.getAttribute("data-checkin");
+      if (!id) return;
 
-      const checkId = btn.getAttribute("data-checkin");
-      if (!checkId) return;
-
-      msg.textContent = "Saving…";
+      setMsg(msg, "Checking in…");
       const { error } = await supabase
         .from("trucks")
         .update({ status: "Checked In", last_updated: new Date().toISOString() })
-        .eq("id", checkId);
+        .eq("id", id);
 
-      if (error) {
-        msg.textContent = `Save error: ${error.message}`;
-        return;
-      }
-
-      msg.textContent = "Checked in.";
-      await loadQueueRows();
+      if (error) return setMsg(msg, `Check-in error: ${error.message}`, "bad");
+      setMsg(msg, "Checked In.", "ok");
+      await loadRows();
     });
 
-    loadQueueRows();
-    setInterval(loadQueueRows, 20000);
+    search.addEventListener("input", () => render(rows));
+    refreshBtn.addEventListener("click", loadRows);
+
+    // ===== BOL scan (OCR) =====
+    async function ensureTesseract(){
+      if (window.Tesseract) return window.Tesseract;
+      await new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+      return window.Tesseract;
+    }
+
+    function extractFiveDigitNumbers(text){
+      const matches = text.match(/\b\d{5}\b/g) || [];
+      // unique
+      return Array.from(new Set(matches));
+    }
+
+    function queuedPOSet(){
+      return new Set(rows.filter(r => !r.archived && (r.status||"")==="Queue").map(r => String(r.po_number)));
+    }
+
+    function findRowsByPO(poNum){
+      return rows.filter(r => !r.archived && String(r.po_number) === String(poNum));
+    }
+
+    function renderMatches(foundPOs){
+      matchesEl.innerHTML = "";
+      if (!foundPOs.length) return;
+
+      foundPOs.forEach(poNum => {
+        const r = findRowsByPO(poNum)[0];
+        if (!r) return;
+        const div = document.createElement("div");
+        div.className = "match";
+        div.innerHTML = `
+          <div>
+            <div><b>PO ${poNum}</b></div>
+            <div class="muted">${r.department || ""} — ${instruction(r)}</div>
+          </div>
+          <button data-checkin="${r.id}" type="button">Check In</button>
+        `;
+        matchesEl.appendChild(div);
+      });
+    }
+
+    scanBtn.addEventListener("click", async () => {
+      matchesEl.innerHTML = "";
+      setMsg(scanMsg, "");
+
+      const file = bolFile.files && bolFile.files[0];
+      if (!file) return setMsg(scanMsg, "Pick a BOL photo first.", "bad");
+
+      try {
+        setMsg(scanMsg, "Scanning… (this can take a moment)", "");
+        const Tesseract = await ensureTesseract();
+
+        const { data } = await Tesseract.recognize(file, "eng", {
+          logger: m => {
+            // optional: could show progress
+          }
+        });
+
+        const text = data?.text || "";
+        const nums = extractFiveDigitNumbers(text);
+
+        if (!nums.length) {
+          return setMsg(scanMsg, "No 5-digit numbers detected on this page.", "bad");
+        }
+
+        const qset = queuedPOSet();
+        const matches = nums.filter(n => qset.has(n));
+
+        if (!matches.length) {
+          setMsg(scanMsg, `No matching queued PO found. (Detected: ${nums.slice(0,10).join(", ")}${nums.length>10?"…":""})`, "bad");
+          return;
+        }
+
+        setMsg(scanMsg, `Matched ${matches.length} queued PO(s): ${matches.join(", ")}`, "ok");
+        renderMatches(matches);
+
+      } catch (err) {
+        setMsg(scanMsg, "Scan failed. Try a clearer photo with better lighting.", "bad");
+      }
+    });
+
+    // Init
+    loadRows();
   </script>
 </body>
 </html>
