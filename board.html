@@ -124,7 +124,7 @@
       let view = allRows.filter(r => !r.archived);
 
       // Officer view: focus on Queue first, newest first
-      view = view.sort((a,b) => (b.po_number||"").localeCompare(a.po_number||""));
+      view = view.sort((a,b) => (a.po_number||"").localeCompare(b.po_number||""));
       if (q) view = view.filter(r => String(r.po_number||"").includes(q));
 
       if (!view.length){
