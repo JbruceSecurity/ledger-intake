@@ -5,73 +5,376 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Ledger Intake (Admin)</title>
   <style>
-    body { font-family: -apple-system, system-ui, Arial; padding: 14px; max-width: 1200px; margin: 0 auto; }
-    h1 { margin: 0 0 10px; }
+    body { font-family: -apple-system, system-ui, Arial; padding: 14px; max-width: 1100px; margin: 0 auto; }
+    h1 { margin: 0 0 6px; }
     .muted { color:#666; font-size: 13px; }
-    .tabs { display:flex; gap:8px; margin:12px 0; flex-wrap: wrap; }
-    .tab {
-      padding:10px 14px;
-      border:1px solid #ddd;
-      border-radius:999px;
-      cursor:pointer;
-      background:#f7f7f7;
-      font-weight:700;
-      user-select: none;
-    }
+    .top { display:flex; gap:10px; align-items:center; flex-wrap: wrap; margin: 12px 0; }
+    .right { margin-left:auto; }
+    .tabs { display:flex; gap:8px; flex-wrap: wrap; margin: 14px 0 8px; }
+    .tab { border:1px solid #ddd; background:#f7f7f7; padding:10px 14px; border-radius:999px; cursor:pointer; font-weight:700; }
     .tab.active { background:#111; color:#fff; border-color:#111; }
-    label { display:block; font-size:14px; margin:10px 0 6px; }
-    input, button { width:100%; font-size:16px; padding:10px; box-sizing: border-box; }
-    button { cursor:pointer; }
-    table { width:100%; border-collapse: collapse; margin-top:14px; }
+    label { display:block; font-size: 13px; margin: 10px 0 6px; font-weight: 700; }
+    input, button { font-size: 18px; padding: 12px; width: 100%; box-sizing: border-box; }
+    button { cursor: pointer; }
+    .row { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .actions { display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px; }
+    .msg { margin: 10px 0; font-weight: 800; }
+    .ok { color:#0b6b2f; }
+    .bad { color:#b00020; }
+    .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; border:1px solid #ddd; }
+    .card { border:1px solid #e6e6e6; border-radius:14px; padding:12px; background:#fff; }
+    table { width:100%; border-collapse: collapse; margin-top:12px; }
     th, td { border:1px solid #ddd; padding:8px; font-size:14px; vertical-align: top; }
     th { background:#f5f5f5; text-align:left; }
-    .msg { margin:10px 0; font-weight:800; }
-    .pill { padding:3px 8px; border-radius:999px; border:1px solid #ddd; font-size:12px; display:inline-block; }
-    .topline { display:flex; gap:12px; align-items: baseline; flex-wrap: wrap; }
-    .topline .right { margin-left:auto; }
     .mini { font-size:12px; }
+    .danger { border:1px solid #f2b8b5; background:#fff5f5; padding:10px; border-radius:12px; margin-top:10px; }
+    .countbar { display:flex; gap:10px; flex-wrap: wrap; align-items:center; }
+    .count { background:#f5f5f5; border:1px solid #ddd; padding:8px 10px; border-radius:999px; font-weight:800; }
+    a { color: inherit; }
   </style>
 </head>
 <body>
+  <h1>Ledger Intake (Admin)</h1>
+  <div class="muted">
+    Tabs match ledger pages. Type PO → press <b>Enter</b> → repeat.
+    <br/>Door wording:
+    <b>Blank ledger door</b> → <b>Walk Through</b> (Grocery→56, Produce/Dairy→93, Meat/Frozen→132).
+    <b>Assigned ledger door</b> → <b>Back In</b> to Door ##.
+  </div>
 
-<div class="topline">
-  <div>
-    <h1 style="margin:0;">Ledger Intake (Admin)</h1>
-    <div class="muted">
-      Each tab matches a warehouse ledger page.  
-      Type PO → press <b>Enter</b> → repeat.
+  <div class="danger">
+    <b>Admin-only.</b> Officers use <code>/board.html</code>
+  </div>
+
+  <div class="top">
+    <div class="countbar">
+      <span class="count" id="countQueue">Queue: 0</span>
+      <span class="count" id="countChecked">Checked In: 0</span>
     </div>
+    <div class="right muted mini">Officer link: <a href="./board.html" target="_blank">board.html</a></div>
   </div>
-  <div class="right muted mini">
-    Officer link: <a href="./board.html" target="_blank">board.html</a>
+
+  <div class="tabs" id="tabs"></div>
+
+  <div class="card">
+    <form id="form">
+      <label>PO Number (5 digits)</label>
+      <input id="po" maxlength="5" inputmode="numeric" placeholder="12345" autocomplete="off" required />
+
+      <div class="row">
+        <div>
+          <label>Ledger Door (optional)</label>
+          <input id="ledgerDoor" inputmode="numeric" placeholder="e.g. 12 (leave blank if none)" autocomplete="off" />
+        </div>
+        <div>
+          <label>Notes (optional)</label>
+          <input id="notes" placeholder="Optional note to officers" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="submit" id="addBtn">Add PO to Ledger</button>
+        <button type="button" id="clearBtn">Clear</button>
+        <button type="button" id="undoBtn">Undo last</button>
+      </div>
+    </form>
+
+    <p class="msg" id="msg"></p>
   </div>
-</div>
 
-<!-- Department Tabs -->
-<div class="tabs" id="tabs">
-  <div class="tab active" data-dept="Grocery">Grocery</div>
-  <div class="tab" data-dept="Produce/Dairy">Produce / Dairy</div>
-  <div class="tab" data-dept="Meat/Frozen">Meat / Frozen</div>
-</div>
+  <label style="margin-top:14px;">Search</label>
+  <input id="search" placeholder="Type PO digits…" inputmode="numeric" />
 
-<p class="msg" id="msg"></p>
+  <div id="tableWrap"></div>
 
-<!-- Entry Form -->
-<form id="form" autocomplete="off">
-  <label>PO Number (5 digits)</label>
-  <input id="po" maxlength="5" inputmode="numeric" placeholder="12345" required />
+  <script type="module">
+    // ===== ADMIN PIN (change this) =====
+    const ADMIN_PIN = "1234"; // <-- change if you want
 
-  <label>Ledger Door (optional)</label>
-  <input id="ledgerDoor" placeholder="e.g. 12 (leave blank if none)" />
+    // ===== Supabase =====
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+    const SUPABASE_URL = "https://pxiigthkswhnivanndfn.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_fWVXeZM0mcylqczc6DWztA_Fu63kfj0";
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  <button type="submit">Add PO to Ledger</button>
-</form>
+    // ===== PIN gate (UI-only) =====
+    if (sessionStorage.getItem("admin_ok") !== "1") {
+      const entered = prompt("Admin PIN:");
+      if (entered !== ADMIN_PIN) {
+        alert("Wrong PIN. Opening Officer Board instead.");
+        location.href = "./board.html";
+      } else {
+        sessionStorage.setItem("admin_ok", "1");
+      }
+    }
 
-<!-- Current dept ledger table -->
-<div id="tableWrap"></div>
+    // ===== Departments / tabs =====
+    const DEPTS = ["Grocery", "Produce/Dairy", "Meat/Frozen"];
+    let activeDept = "Grocery";
 
-<script type="module">
-  import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+    // ===== Elements =====
+    const tabs = document.getElementById("tabs");
+    const form = document.getElementById("form");
+    const msg = document.getElementById("msg");
+    const tableWrap = document.getElementById("tableWrap");
+    const search = document.getElementById("search");
 
-  const SUPABASE_URL = "https://pxiigthkswhnivanndfn.supabase.co";
-  const SUPABASE_KEY
+    const po = document.getElementById("po");
+    const ledgerDoor = document.getElementById("ledgerDoor");
+    const notes = document.getElementById("notes");
+
+    const clearBtn = document.getElementById("clearBtn");
+    const undoBtn = document.getElementById("undoBtn");
+
+    const countQueue = document.getElementById("countQueue");
+    const countChecked = document.getElementById("countChecked");
+
+    let rows = [];
+    let lastAction = null; // { type: "insert"|"update", id, beforeRow }
+
+    function isFiveDigits(v){ return /^[0-9]{5}$/.test(v); }
+    function pill(t){ return `<span class="pill">${t}</span>`; }
+
+    function defaultDoorForDept(dept){
+      if (dept === "Grocery") return "56";
+      if (dept === "Produce/Dairy") return "93";
+      if (dept === "Meat/Frozen") return "132";
+      return "";
+    }
+
+    function doorInstruction(r){
+      const ld = (r.ledger_door || "").trim();
+      if (ld) return { door: ld, text: `Back In to Door ${ld}` };
+      const d = defaultDoorForDept(r.department);
+      return { door: d, text: `Walk Through (Door ${d})` };
+    }
+
+    function setMsg(text, kind=""){
+      msg.className = "msg " + (kind || "");
+      msg.textContent = text || "";
+    }
+
+    function buildTabs(){
+      tabs.innerHTML = DEPTS.map(d => `
+        <button class="tab ${d===activeDept ? "active":""}" data-dept="${d}" type="button">${d}</button>
+      `).join("");
+    }
+
+    tabs.addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-dept]");
+      if (!b) return;
+      activeDept = b.getAttribute("data-dept");
+      buildTabs();
+      setMsg(`Department set to: ${activeDept}`, "ok");
+      po.focus();
+      render(rows);
+    });
+
+    function updateCounts(allRows){
+      const active = allRows.filter(r => !r.archived);
+      const q = active.filter(r => (r.status || "") === "Queue").length;
+      const c = active.filter(r => (r.status || "") === "Checked In").length;
+      countQueue.textContent = `Queue: ${q}`;
+      countChecked.textContent = `Checked In: ${c}`;
+    }
+
+    function render(allRows){
+      updateCounts(allRows);
+
+      const q = (search.value || "").trim();
+      let view = allRows.filter(r => !r.archived);
+
+      // keep the table focused: show active dept first
+      view = view.sort((a,b) => (b.last_updated||"").localeCompare(a.last_updated||""));
+
+      if (q) view = view.filter(r => String(r.po_number||"").includes(q));
+
+      if (!view.length){
+        tableWrap.innerHTML = `<p class="muted">No rows.</p>`;
+        return;
+      }
+
+      tableWrap.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>PO</th>
+              <th>Dept</th>
+              <th>Status</th>
+              <th>Door</th>
+              <th>Instruction</th>
+              <th>Updated</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${view.map(r => {
+              const inst = doorInstruction(r);
+              const updated = r.last_updated ? new Date(r.last_updated).toLocaleString() : "";
+              return `
+                <tr>
+                  <td><b>${r.po_number||""}</b></td>
+                  <td>${r.department||""}</td>
+                  <td>${pill(r.status||"")}</td>
+                  <td>${inst.door||""}</td>
+                  <td>${inst.text}</td>
+                  <td>${updated}</td>
+                  <td style="min-width:170px;">
+                    <button data-edit="${r.id}" type="button">Edit</button>
+                    <button data-del="${r.id}" type="button">Delete</button>
+                  </td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function loadRows(){
+      setMsg("Loading…");
+      const { data, error } = await supabase
+        .from("trucks")
+        .select("*")
+        .order("last_updated", { ascending: false });
+
+      if (error) return setMsg(`Load error: ${error.message}`, "bad");
+      rows = data || [];
+      setMsg("");
+      render(rows);
+    }
+
+    function clearForm(){
+      po.value = "";
+      ledgerDoor.value = "";
+      notes.value = "";
+      setMsg("");
+      po.focus();
+    }
+
+    // Enter-to-add: submit form when PO field has 5 digits and user presses Enter
+    po.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        // Let form submit normally (we preventDefault inside submit handler)
+      }
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      setMsg("");
+
+      const poVal = po.value.trim();
+      const ldVal = ledgerDoor.value.trim();
+      const notesVal = notes.value.trim();
+
+      if (!isFiveDigits(poVal)) return setMsg("PO must be exactly 5 digits.", "bad");
+
+      // Duplicate warning (active rows only)
+      const existingActive = rows.find(r => !r.archived && r.po_number === poVal);
+      if (existingActive) {
+        const ok = confirm(`PO ${poVal} already exists. Update it?`);
+        if (!ok) return setMsg("Cancelled.", "bad");
+      }
+
+      setMsg("Saving…");
+
+      // Status rule: always Queue on admin entry
+      const payload = {
+        po_number: poVal,
+        department: activeDept,
+        ledger_door: ldVal || null,
+        notes: notesVal || null,
+        status: "Queue",
+        archived: false,
+        archived_at: null,
+        last_updated: new Date().toISOString(),
+      };
+
+      if (existingActive) {
+        // store undo snapshot
+        lastAction = { type: "update", id: existingActive.id, beforeRow: { ...existingActive } };
+
+        const { error } = await supabase
+          .from("trucks")
+          .update(payload)
+          .eq("id", existingActive.id);
+
+        if (error) return setMsg(`Save error: ${error.message}`, "bad");
+        setMsg(`Updated PO ${poVal}.`, "ok");
+      } else {
+        const { data, error } = await supabase
+          .from("trucks")
+          .insert([payload])
+          .select("id")
+          .single();
+
+        if (error) return setMsg(`Save error: ${error.message}`, "bad");
+
+        lastAction = { type: "insert", id: data?.id, beforeRow: null };
+        setMsg(`Added PO ${poVal}.`, "ok");
+      }
+
+      clearForm();
+      await loadRows();
+    });
+
+    undoBtn.addEventListener("click", async () => {
+      if (!lastAction) return setMsg("Nothing to undo.", "bad");
+
+      setMsg("Undoing…");
+
+      if (lastAction.type === "insert") {
+        const { error } = await supabase.from("trucks").delete().eq("id", lastAction.id);
+        if (error) return setMsg(`Undo error: ${error.message}`, "bad");
+        setMsg("Undid last insert.", "ok");
+      }
+
+      if (lastAction.type === "update") {
+        const { error } = await supabase.from("trucks").update(lastAction.beforeRow).eq("id", lastAction.id);
+        if (error) return setMsg(`Undo error: ${error.message}`, "bad");
+        setMsg("Undid last update.", "ok");
+      }
+
+      lastAction = null;
+      await loadRows();
+    });
+
+    clearBtn.addEventListener("click", clearForm);
+    search.addEventListener("input", () => render(rows));
+
+    tableWrap.addEventListener("click", async (e) => {
+      const btn = e.target.closest("button");
+      if (!btn) return;
+
+      const editId = btn.getAttribute("data-edit");
+      const delId = btn.getAttribute("data-del");
+
+      if (editId) {
+        const r = rows.find(x => String(x.id) === String(editId));
+        if (!r) return;
+        activeDept = r.department || activeDept;
+        buildTabs();
+        po.value = r.po_number || "";
+        ledgerDoor.value = r.ledger_door || "";
+        notes.value = r.notes || "";
+        setMsg("Loaded for editing. Press Enter to save.", "ok");
+        po.focus();
+      }
+
+      if (delId) {
+        if (!confirm("Delete this row?")) return;
+        setMsg("Deleting…");
+        const { error } = await supabase.from("trucks").delete().eq("id", delId);
+        if (error) return setMsg(`Delete error: ${error.message}`, "bad");
+        setMsg("Deleted.", "ok");
+        await loadRows();
+      }
+    });
+
+    // Init
+    buildTabs();
+    loadRows();
+    po.focus();
+  </script>
+</body>
+</html>
