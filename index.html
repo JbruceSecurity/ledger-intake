@@ -46,12 +46,17 @@
     <b>Admin-only.</b> Officers use <code>/board.html</code>
   </div>
 
+  <!-- TOP BAR (now includes Print button) -->
   <div class="top">
     <div class="countbar">
       <span class="count" id="countQueue">Queue: 0</span>
       <span class="count" id="countChecked">Checked In: 0</span>
     </div>
-    <div class="right muted mini">Officer link: <a href="./board.html" target="_blank">board.html</a></div>
+
+    <div class="right" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <button type="button" id="printBtn" style="width:auto;">Export / Print Ledger</button>
+      <div class="muted mini">Officer link: <a href="./board.html" target="_blank">board.html</a></div>
+    </div>
   </div>
 
   <div class="tabs" id="tabs"></div>
@@ -129,6 +134,8 @@
     const countQueue = document.getElementById("countQueue");
     const countChecked = document.getElementById("countChecked");
 
+    const printBtn = document.getElementById("printBtn");
+
     let rows = [];
     let lastAction = null; // { type: "insert"|"update", id, beforeRow }
 
@@ -184,7 +191,6 @@
       const q = (search.value || "").trim();
       let view = allRows.filter(r => !r.archived);
 
-      // keep the table focused: show active dept first
       view = view.sort((a,b) => (b.last_updated||"").localeCompare(a.last_updated||""));
 
       if (q) view = view.filter(r => String(r.po_number||"").includes(q));
@@ -252,13 +258,6 @@
       po.focus();
     }
 
-    // Enter-to-add: submit form when PO field has 5 digits and user presses Enter
-    po.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        // Let form submit normally (we preventDefault inside submit handler)
-      }
-    });
-
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       setMsg("");
@@ -269,7 +268,6 @@
 
       if (!isFiveDigits(poVal)) return setMsg("PO must be exactly 5 digits.", "bad");
 
-      // Duplicate warning (active rows only)
       const existingActive = rows.find(r => !r.archived && r.po_number === poVal);
       if (existingActive) {
         const ok = confirm(`PO ${poVal} already exists. Update it?`);
@@ -278,7 +276,6 @@
 
       setMsg("Saving…");
 
-      // Status rule: always Queue on admin entry
       const payload = {
         po_number: poVal,
         department: activeDept,
@@ -291,7 +288,6 @@
       };
 
       if (existingActive) {
-        // store undo snapshot
         lastAction = { type: "update", id: existingActive.id, beforeRow: { ...existingActive } };
 
         const { error } = await supabase
@@ -369,6 +365,106 @@
         setMsg("Deleted.", "ok");
         await loadRows();
       }
+    });
+
+    // ===== PRINT / EXPORT LEDGER =====
+    function poAsInt(po){
+      const n = parseInt(String(po || "").trim(), 10);
+      return Number.isFinite(n) ? n : 999999;
+    }
+
+    function instructionTextForPrint(r){
+      const ld = (r.ledger_door || "").trim();
+      if (ld) return `Back In to Door ${ld}`;
+      const d = defaultDoorForDept(r.department);
+      return `Walk Through (Door ${d})`;
+    }
+
+    function doorForPrint(r){
+      const ld = (r.ledger_door || "").trim();
+      return ld || defaultDoorForDept(r.department);
+    }
+
+    function buildPrintHTML(allRows){
+      const active = (allRows || []).filter(r => !r.archived);
+      active.sort((a,b) => poAsInt(a.po_number) - poAsInt(b.po_number));
+
+      const stamp = new Date().toLocaleString();
+
+      const bodyRows = active.map(r => `
+        <tr>
+          <td><b>${r.po_number || ""}</b></td>
+          <td>${r.department || ""}</td>
+          <td><b>${doorForPrint(r) || ""}</b></td>
+          <td>${instructionTextForPrint(r)}</td>
+          <td>${r.status || ""}</td>
+          <td>${(r.notes || "")}</td>
+        </tr>
+      `).join("");
+
+      return `
+      <!doctype html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>PWADC Ledger Print</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 18px; }
+          h1 { margin: 0 0 6px; font-size: 18px; }
+          .meta { font-size: 12px; color:#555; margin-bottom: 10px; }
+          table { width:100%; border-collapse: collapse; }
+          th, td { border:1px solid #000; padding:6px; font-size: 12px; vertical-align: top; }
+          th { background:#eee; text-align:left; }
+          @media print {
+            body { padding: 0; }
+            tr { page-break-inside: avoid; }
+          }
+        </style>
+      </head>
+      <body>
+        <h1>PWADC — Gate Ledger (Print Copy)</h1>
+        <div class="meta">
+          Generated: ${stamp} <br/>
+          Sorted: smallest PO → largest PO <br/>
+          Rows: ${active.length}
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="width:90px;">PO</th>
+              <th style="width:140px;">Department</th>
+              <th style="width:80px;">Door</th>
+              <th>Instruction</th>
+              <th style="width:90px;">Status</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${bodyRows || `<tr><td colspan="6">No active rows.</td></tr>`}
+          </tbody>
+        </table>
+      </body>
+      </html>`;
+    }
+
+    printBtn.addEventListener("click", async () => {
+      await loadRows();
+      const html = buildPrintHTML(rows);
+
+      const w = window.open("", "_blank");
+      if (!w) {
+        alert("Pop-up blocked. Allow pop-ups to print.");
+        return;
+      }
+
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+
+      w.focus();
+      setTimeout(() => w.print(), 300);
     });
 
     // Init
