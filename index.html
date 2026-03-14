@@ -17,7 +17,7 @@
     input, button { font-size: 18px; padding: 12px; width: 100%; box-sizing: border-box; }
     button { cursor: pointer; }
     .row { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .actions { display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px; }
+    .actions { display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-top: 10px; }
     .msg { margin: 10px 0; font-weight: 800; }
     .ok { color:#0b6b2f; }
     .bad { color:#b00020; }
@@ -30,6 +30,7 @@
     .danger { border:1px solid #f2b8b5; background:#fff5f5; padding:10px; border-radius:12px; margin-top:10px; }
     .countbar { display:flex; gap:10px; flex-wrap: wrap; align-items:center; }
     .count { background:#f5f5f5; border:1px solid #ddd; padding:8px 10px; border-radius:999px; font-weight:800; }
+    .dangerBtn { background:#fff5f5; border:1px solid #f2b8b5; }
     a { color: inherit; }
   </style>
 </head>
@@ -46,7 +47,6 @@
     <b>Admin-only.</b> Officers use <code>/board.html</code>
   </div>
 
-  <!-- TOP BAR (now includes Print button) -->
   <div class="top">
     <div class="countbar">
       <span class="count" id="countQueue">Queue: 0</span>
@@ -81,6 +81,7 @@
         <button type="submit" id="addBtn">Add PO to Ledger</button>
         <button type="button" id="clearBtn">Clear</button>
         <button type="button" id="undoBtn">Undo last</button>
+        <button type="button" id="archiveAllBtn" class="dangerBtn">Clear Active Ledger</button>
       </div>
     </form>
 
@@ -130,6 +131,7 @@
 
     const clearBtn = document.getElementById("clearBtn");
     const undoBtn = document.getElementById("undoBtn");
+    const archiveAllBtn = document.getElementById("archiveAllBtn");
 
     const countQueue = document.getElementById("countQueue");
     const countChecked = document.getElementById("countChecked");
@@ -137,7 +139,7 @@
     const printBtn = document.getElementById("printBtn");
 
     let rows = [];
-    let lastAction = null; // { type: "insert"|"update", id, beforeRow }
+    let lastAction = null; // { type: "insert"|"update"|"archiveAll", id?, beforeRow?, beforeRows? }
 
     function isFiveDigits(v){ return /^[0-9]{5}$/.test(v); }
     function pill(t){ return `<span class="pill">${t}</span>`; }
@@ -227,7 +229,7 @@
                   <td>${updated}</td>
                   <td style="min-width:170px;">
                     <button data-edit="${r.id}" type="button">Edit</button>
-                    <button data-del="${r.id}" type="button">Delete</button>
+                    <button data-del="${r.id}" type="button">Archive</button>
                   </td>
                 </tr>
               `;
@@ -326,9 +328,30 @@
       }
 
       if (lastAction.type === "update") {
-        const { error } = await supabase.from("trucks").update(lastAction.beforeRow).eq("id", lastAction.id);
+        const { error } = await supabase
+          .from("trucks")
+          .update(lastAction.beforeRow)
+          .eq("id", lastAction.id);
+
         if (error) return setMsg(`Undo error: ${error.message}`, "bad");
         setMsg("Undid last update.", "ok");
+      }
+
+      if (lastAction.type === "archiveAll") {
+        const restoreRows = lastAction.beforeRows || [];
+        for (const r of restoreRows) {
+          const { error } = await supabase
+            .from("trucks")
+            .update({
+              archived: r.archived,
+              archived_at: r.archived_at,
+              last_updated: r.last_updated,
+            })
+            .eq("id", r.id);
+
+          if (error) return setMsg(`Undo error: ${error.message}`, "bad");
+        }
+        setMsg("Undid clear active ledger.", "ok");
       }
 
       lastAction = null;
@@ -337,6 +360,48 @@
 
     clearBtn.addEventListener("click", clearForm);
     search.addEventListener("input", () => render(rows));
+
+    archiveAllBtn.addEventListener("click", async () => {
+      const activeRows = rows.filter(r => !r.archived);
+
+      if (!activeRows.length) {
+        return setMsg("No active entries to clear.", "bad");
+      }
+
+      const ok = confirm(`Archive all ${activeRows.length} active entries?`);
+      if (!ok) return;
+
+      setMsg("Clearing active ledger…");
+
+      lastAction = {
+        type: "archiveAll",
+        beforeRows: activeRows.map(r => ({
+          id: r.id,
+          archived: r.archived,
+          archived_at: r.archived_at,
+          last_updated: r.last_updated
+        }))
+      };
+
+      const now = new Date().toISOString();
+
+      const { error } = await supabase
+        .from("trucks")
+        .update({
+          archived: true,
+          archived_at: now,
+          last_updated: now
+        })
+        .eq("archived", false);
+
+      if (error) {
+        lastAction = null;
+        return setMsg(`Clear ledger error: ${error.message}`, "bad");
+      }
+
+      setMsg("All active entries archived.", "ok");
+      await loadRows();
+    });
 
     tableWrap.addEventListener("click", async (e) => {
       const btn = e.target.closest("button");
@@ -358,11 +423,28 @@
       }
 
       if (delId) {
-        if (!confirm("Delete this row?")) return;
-        setMsg("Deleting…");
-        const { error } = await supabase.from("trucks").delete().eq("id", delId);
-        if (error) return setMsg(`Delete error: ${error.message}`, "bad");
-        setMsg("Deleted.", "ok");
+        const r = rows.find(x => String(x.id) === String(delId));
+        if (!r) return;
+
+        if (!confirm("Archive this row?")) return;
+
+        setMsg("Archiving…");
+        lastAction = { type: "update", id: r.id, beforeRow: { ...r } };
+
+        const now = new Date().toISOString();
+
+        const { error } = await supabase
+          .from("trucks")
+          .update({
+            archived: true,
+            archived_at: now,
+            last_updated: now
+          })
+          .eq("id", delId);
+
+        if (error) return setMsg(`Archive error: ${error.message}`, "bad");
+
+        setMsg("Archived.", "ok");
         await loadRows();
       }
     });
