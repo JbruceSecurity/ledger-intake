@@ -1,558 +1,216 @@
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Ledger Intake (Admin)</title>
-  <style>
-    body { font-family: -apple-system, system-ui, Arial; padding: 14px; max-width: 1100px; margin: 0 auto; }
-    h1 { margin: 0 0 6px; }
-    .muted { color:#666; font-size: 13px; }
-    .top { display:flex; gap:10px; align-items:center; flex-wrap: wrap; margin: 12px 0; }
-    .right { margin-left:auto; }
-    .tabs { display:flex; gap:8px; flex-wrap: wrap; margin: 14px 0 8px; }
-    .tab { border:1px solid #ddd; background:#f7f7f7; padding:10px 14px; border-radius:999px; cursor:pointer; font-weight:700; }
-    .tab.active { background:#111; color:#fff; border-color:#111; }
-    label { display:block; font-size: 13px; margin: 10px 0 6px; font-weight: 700; }
-    input, button { font-size: 18px; padding: 12px; width: 100%; box-sizing: border-box; }
-    button { cursor: pointer; }
-    .row { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .actions { display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-top: 10px; }
-    .msg { margin: 10px 0; font-weight: 800; }
-    .ok { color:#0b6b2f; }
-    .bad { color:#b00020; }
-    .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; border:1px solid #ddd; }
-    .card { border:1px solid #e6e6e6; border-radius:14px; padding:12px; background:#fff; }
-    table { width:100%; border-collapse: collapse; margin-top:12px; }
-    th, td { border:1px solid #ddd; padding:8px; font-size:14px; vertical-align: top; }
-    th { background:#f5f5f5; text-align:left; }
-    .mini { font-size:12px; }
-    .danger { border:1px solid #f2b8b5; background:#fff5f5; padding:10px; border-radius:12px; margin-top:10px; }
-    .countbar { display:flex; gap:10px; flex-wrap: wrap; align-items:center; }
-    .count { background:#f5f5f5; border:1px solid #ddd; padding:8px 10px; border-radius:999px; font-weight:800; }
-    .dangerBtn { background:#fff5f5; border:1px solid #f2b8b5; }
-    a { color: inherit; }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ledger Intake (Admin)</title>
+
+<style>
+body { font-family:-apple-system,system-ui,Arial; padding:14px; max-width:1100px; margin:0 auto; }
+h1 { margin:0 0 6px; }
+.muted { color:#666; font-size:13px; }
+
+.top { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:12px 0; }
+.right { margin-left:auto; display:flex; gap:10px; }
+
+button { cursor:pointer; padding:12px; font-size:16px; }
+
+.danger {
+background:#fff5f5;
+border:1px solid #f2b8b5;
+}
+
+.card { border:1px solid #e6e6e6; border-radius:14px; padding:12px; }
+
+table { width:100%; border-collapse:collapse; margin-top:12px; }
+th,td { border:1px solid #ddd; padding:8px; }
+th { background:#f5f5f5; }
+
+.msg { margin:10px 0; font-weight:700; }
+.ok { color:#0b6b2f; }
+.bad { color:#b00020; }
+</style>
 </head>
+
 <body>
-  <h1>Ledger Intake (Admin)</h1>
-  <div class="muted">
-    Tabs match ledger pages. Type PO → press <b>Enter</b> → repeat.
-    <br/>Door wording:
-    <b>Blank ledger door</b> → <b>Walk Through</b> (Grocery→56, Produce/Dairy→93, Meat/Frozen→132).
-    <b>Assigned ledger door</b> → <b>Back In</b> to Door ##.
-  </div>
-
-  <div class="danger">
-    <b>Admin-only.</b> Officers use <code>/board.html</code>
-  </div>
-
-  <div class="top">
-    <div class="countbar">
-      <span class="count" id="countQueue">Queue: 0</span>
-      <span class="count" id="countChecked">Checked In: 0</span>
-    </div>
-
-    <div class="right" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-      <button type="button" id="printBtn" style="width:auto;">Export / Print Ledger</button>
-      <div class="muted mini">Officer link: <a href="./board.html" target="_blank">board.html</a></div>
-    </div>
-  </div>
-
-  <div class="tabs" id="tabs"></div>
-
-  <div class="card">
-    <form id="form">
-      <label>PO Number (5 digits)</label>
-      <input id="po" maxlength="5" inputmode="numeric" placeholder="12345" autocomplete="off" required />
-
-      <div class="row">
-        <div>
-          <label>Ledger Door (optional)</label>
-          <input id="ledgerDoor" inputmode="numeric" placeholder="e.g. 12 (leave blank if none)" autocomplete="off" />
-        </div>
-        <div>
-          <label>Notes (optional)</label>
-          <input id="notes" placeholder="Optional note to officers" autocomplete="off" />
-        </div>
-      </div>
-
-      <div class="actions">
-        <button type="submit" id="addBtn">Add PO to Ledger</button>
-        <button type="button" id="clearBtn">Clear</button>
-        <button type="button" id="undoBtn">Undo last</button>
-        <button type="button" id="archiveAllBtn" class="dangerBtn">Clear Active Ledger</button>
-      </div>
-    </form>
-
-    <p class="msg" id="msg"></p>
-  </div>
-
-  <label style="margin-top:14px;">Search</label>
-  <input id="search" placeholder="Type PO digits…" inputmode="numeric" />
-
-  <div id="tableWrap"></div>
-
-  <script type="module">
-    // ===== ADMIN PIN (change this) =====
-    const ADMIN_PIN = "1234"; // <-- change if you want
-
-    // ===== Supabase =====
-    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-    const SUPABASE_URL = "https://pxiigthkswhnivanndfn.supabase.co";
-    const SUPABASE_KEY = "sb_publishable_fWVXeZM0mcylqczc6DWztA_Fu63kfj0";
-    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-
-    // ===== PIN gate (UI-only) =====
-    if (sessionStorage.getItem("admin_ok") !== "1") {
-      const entered = prompt("Admin PIN:");
-      if (entered !== ADMIN_PIN) {
-        alert("Wrong PIN. Opening Officer Board instead.");
-        location.href = "./board.html";
-      } else {
-        sessionStorage.setItem("admin_ok", "1");
-      }
-    }
-
-    // ===== Departments / tabs =====
-    const DEPTS = ["Grocery", "Produce/Dairy", "Meat/Frozen"];
-    let activeDept = "Grocery";
-
-    // ===== Elements =====
-    const tabs = document.getElementById("tabs");
-    const form = document.getElementById("form");
-    const msg = document.getElementById("msg");
-    const tableWrap = document.getElementById("tableWrap");
-    const search = document.getElementById("search");
-
-    const po = document.getElementById("po");
-    const ledgerDoor = document.getElementById("ledgerDoor");
-    const notes = document.getElementById("notes");
-
-    const clearBtn = document.getElementById("clearBtn");
-    const undoBtn = document.getElementById("undoBtn");
-    const archiveAllBtn = document.getElementById("archiveAllBtn");
-
-    const countQueue = document.getElementById("countQueue");
-    const countChecked = document.getElementById("countChecked");
-
-    const printBtn = document.getElementById("printBtn");
-
-    let rows = [];
-    let lastAction = null; // { type: "insert"|"update"|"archiveAll", id?, beforeRow?, beforeRows? }
-
-    function isFiveDigits(v){ return /^[0-9]{5}$/.test(v); }
-    function pill(t){ return `<span class="pill">${t}</span>`; }
-
-    function defaultDoorForDept(dept){
-      if (dept === "Grocery") return "56";
-      if (dept === "Produce/Dairy") return "93";
-      if (dept === "Meat/Frozen") return "132";
-      return "";
-    }
-
-    function doorInstruction(r){
-      const ld = (r.ledger_door || "").trim();
-      if (ld) return { door: ld, text: `Back In to Door ${ld}` };
-      const d = defaultDoorForDept(r.department);
-      return { door: d, text: `Walk Through (Door ${d})` };
-    }
-
-    function setMsg(text, kind=""){
-      msg.className = "msg " + (kind || "");
-      msg.textContent = text || "";
-    }
-
-    function buildTabs(){
-      tabs.innerHTML = DEPTS.map(d => `
-        <button class="tab ${d===activeDept ? "active":""}" data-dept="${d}" type="button">${d}</button>
-      `).join("");
-    }
-
-    tabs.addEventListener("click", (e) => {
-      const b = e.target.closest("button[data-dept]");
-      if (!b) return;
-      activeDept = b.getAttribute("data-dept");
-      buildTabs();
-      setMsg(`Department set to: ${activeDept}`, "ok");
-      po.focus();
-      render(rows);
-    });
-
-    function updateCounts(allRows){
-      const active = allRows.filter(r => !r.archived);
-      const q = active.filter(r => (r.status || "") === "Queue").length;
-      const c = active.filter(r => (r.status || "") === "Checked In").length;
-      countQueue.textContent = `Queue: ${q}`;
-      countChecked.textContent = `Checked In: ${c}`;
-    }
-
-    function render(allRows){
-      updateCounts(allRows);
-
-      const q = (search.value || "").trim();
-      let view = allRows.filter(r => !r.archived);
-
-      view = view.sort((a,b) => (b.last_updated||"").localeCompare(a.last_updated||""));
-
-      if (q) view = view.filter(r => String(r.po_number||"").includes(q));
-
-      if (!view.length){
-        tableWrap.innerHTML = `<p class="muted">No rows.</p>`;
-        return;
-      }
-
-      tableWrap.innerHTML = `
-        <table>
-          <thead>
-            <tr>
-              <th>PO</th>
-              <th>Dept</th>
-              <th>Status</th>
-              <th>Door</th>
-              <th>Instruction</th>
-              <th>Updated</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${view.map(r => {
-              const inst = doorInstruction(r);
-              const updated = r.last_updated ? new Date(r.last_updated).toLocaleString() : "";
-              return `
-                <tr>
-                  <td><b>${r.po_number||""}</b></td>
-                  <td>${r.department||""}</td>
-                  <td>${pill(r.status||"")}</td>
-                  <td>${inst.door||""}</td>
-                  <td>${inst.text}</td>
-                  <td>${updated}</td>
-                  <td style="min-width:170px;">
-                    <button data-edit="${r.id}" type="button">Edit</button>
-                    <button data-del="${r.id}" type="button">Archive</button>
-                  </td>
-                </tr>
-              `;
-            }).join("")}
-          </tbody>
-        </table>
-      `;
-    }
-
-    async function loadRows(){
-      setMsg("Loading…");
-      const { data, error } = await supabase
-        .from("trucks")
-        .select("*")
-        .order("last_updated", { ascending: false });
-
-      if (error) return setMsg(`Load error: ${error.message}`, "bad");
-      rows = data || [];
-      setMsg("");
-      render(rows);
-    }
-
-    function clearForm(){
-      po.value = "";
-      ledgerDoor.value = "";
-      notes.value = "";
-      setMsg("");
-      po.focus();
-    }
-
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      setMsg("");
-
-      const poVal = po.value.trim();
-      const ldVal = ledgerDoor.value.trim();
-      const notesVal = notes.value.trim();
-
-      if (!isFiveDigits(poVal)) return setMsg("PO must be exactly 5 digits.", "bad");
-
-      const existingActive = rows.find(r => !r.archived && r.po_number === poVal);
-      if (existingActive) {
-        const ok = confirm(`PO ${poVal} already exists. Update it?`);
-        if (!ok) return setMsg("Cancelled.", "bad");
-      }
-
-      setMsg("Saving…");
-
-      const payload = {
-        po_number: poVal,
-        department: activeDept,
-        ledger_door: ldVal || null,
-        notes: notesVal || null,
-        status: "Queue",
-        archived: false,
-        archived_at: null,
-        last_updated: new Date().toISOString(),
-      };
-
-      if (existingActive) {
-        lastAction = { type: "update", id: existingActive.id, beforeRow: { ...existingActive } };
-
-        const { error } = await supabase
-          .from("trucks")
-          .update(payload)
-          .eq("id", existingActive.id);
-
-        if (error) return setMsg(`Save error: ${error.message}`, "bad");
-        setMsg(`Updated PO ${poVal}.`, "ok");
-      } else {
-        const { data, error } = await supabase
-          .from("trucks")
-          .insert([payload])
-          .select("id")
-          .single();
-
-        if (error) return setMsg(`Save error: ${error.message}`, "bad");
-
-        lastAction = { type: "insert", id: data?.id, beforeRow: null };
-        setMsg(`Added PO ${poVal}.`, "ok");
-      }
-
-      clearForm();
-      await loadRows();
-    });
-
-    undoBtn.addEventListener("click", async () => {
-      if (!lastAction) return setMsg("Nothing to undo.", "bad");
-
-      setMsg("Undoing…");
-
-      if (lastAction.type === "insert") {
-        const { error } = await supabase.from("trucks").delete().eq("id", lastAction.id);
-        if (error) return setMsg(`Undo error: ${error.message}`, "bad");
-        setMsg("Undid last insert.", "ok");
-      }
-
-      if (lastAction.type === "update") {
-        const { error } = await supabase
-          .from("trucks")
-          .update(lastAction.beforeRow)
-          .eq("id", lastAction.id);
-
-        if (error) return setMsg(`Undo error: ${error.message}`, "bad");
-        setMsg("Undid last update.", "ok");
-      }
-
-      if (lastAction.type === "archiveAll") {
-        const restoreRows = lastAction.beforeRows || [];
-        for (const r of restoreRows) {
-          const { error } = await supabase
-            .from("trucks")
-            .update({
-              archived: r.archived,
-              archived_at: r.archived_at,
-              last_updated: r.last_updated,
-            })
-            .eq("id", r.id);
-
-          if (error) return setMsg(`Undo error: ${error.message}`, "bad");
-        }
-        setMsg("Undid clear active ledger.", "ok");
-      }
-
-      lastAction = null;
-      await loadRows();
-    });
-
-    clearBtn.addEventListener("click", clearForm);
-    search.addEventListener("input", () => render(rows));
-
-    archiveAllBtn.addEventListener("click", async () => {
-      const activeRows = rows.filter(r => !r.archived);
-
-      if (!activeRows.length) {
-        return setMsg("No active entries to clear.", "bad");
-      }
-
-      const ok = confirm(`Archive all ${activeRows.length} active entries?`);
-      if (!ok) return;
-
-      setMsg("Clearing active ledger…");
-
-      lastAction = {
-        type: "archiveAll",
-        beforeRows: activeRows.map(r => ({
-          id: r.id,
-          archived: r.archived,
-          archived_at: r.archived_at,
-          last_updated: r.last_updated
-        }))
-      };
-
-      const now = new Date().toISOString();
-
-      const { error } = await supabase
-        .from("trucks")
-        .update({
-          archived: true,
-          archived_at: now,
-          last_updated: now
-        })
-        .eq("archived", false);
-
-      if (error) {
-        lastAction = null;
-        return setMsg(`Clear ledger error: ${error.message}`, "bad");
-      }
-
-      setMsg("All active entries archived.", "ok");
-      await loadRows();
-    });
-
-    tableWrap.addEventListener("click", async (e) => {
-      const btn = e.target.closest("button");
-      if (!btn) return;
-
-      const editId = btn.getAttribute("data-edit");
-      const delId = btn.getAttribute("data-del");
-
-      if (editId) {
-        const r = rows.find(x => String(x.id) === String(editId));
-        if (!r) return;
-        activeDept = r.department || activeDept;
-        buildTabs();
-        po.value = r.po_number || "";
-        ledgerDoor.value = r.ledger_door || "";
-        notes.value = r.notes || "";
-        setMsg("Loaded for editing. Press Enter to save.", "ok");
-        po.focus();
-      }
-
-      if (delId) {
-        const r = rows.find(x => String(x.id) === String(delId));
-        if (!r) return;
-
-        if (!confirm("Archive this row?")) return;
-
-        setMsg("Archiving…");
-        lastAction = { type: "update", id: r.id, beforeRow: { ...r } };
-
-        const now = new Date().toISOString();
-
-        const { error } = await supabase
-          .from("trucks")
-          .update({
-            archived: true,
-            archived_at: now,
-            last_updated: now
-          })
-          .eq("id", delId);
-
-        if (error) return setMsg(`Archive error: ${error.message}`, "bad");
-
-        setMsg("Archived.", "ok");
-        await loadRows();
-      }
-    });
-
-    // ===== PRINT / EXPORT LEDGER =====
-    function poAsInt(po){
-      const n = parseInt(String(po || "").trim(), 10);
-      return Number.isFinite(n) ? n : 999999;
-    }
-
-    function instructionTextForPrint(r){
-      const ld = (r.ledger_door || "").trim();
-      if (ld) return `Back In to Door ${ld}`;
-      const d = defaultDoorForDept(r.department);
-      return `Walk Through (Door ${d})`;
-    }
-
-    function doorForPrint(r){
-      const ld = (r.ledger_door || "").trim();
-      return ld || defaultDoorForDept(r.department);
-    }
-
-    function buildPrintHTML(allRows){
-      const active = (allRows || []).filter(r => !r.archived);
-      active.sort((a,b) => poAsInt(a.po_number) - poAsInt(b.po_number));
-
-      const stamp = new Date().toLocaleString();
-
-      const bodyRows = active.map(r => `
-        <tr>
-          <td><b>${r.po_number || ""}</b></td>
-          <td>${r.department || ""}</td>
-          <td><b>${doorForPrint(r) || ""}</b></td>
-          <td>${instructionTextForPrint(r)}</td>
-          <td>${r.status || ""}</td>
-          <td>${(r.notes || "")}</td>
-        </tr>
-      `).join("");
-
-      return `
-      <!doctype html>
-      <html>
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>PWADC Ledger Print</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 18px; }
-          h1 { margin: 0 0 6px; font-size: 18px; }
-          .meta { font-size: 12px; color:#555; margin-bottom: 10px; }
-          table { width:100%; border-collapse: collapse; }
-          th, td { border:1px solid #000; padding:6px; font-size: 12px; vertical-align: top; }
-          th { background:#eee; text-align:left; }
-          @media print {
-            body { padding: 0; }
-            tr { page-break-inside: avoid; }
-          }
-        </style>
-      </head>
-      <body>
-        <h1>PWADC — Gate Ledger (Print Copy)</h1>
-        <div class="meta">
-          Generated: ${stamp} <br/>
-          Sorted: smallest PO → largest PO <br/>
-          Rows: ${active.length}
-        </div>
-
-        <table>
-          <thead>
-            <tr>
-              <th style="width:90px;">PO</th>
-              <th style="width:140px;">Department</th>
-              <th style="width:80px;">Door</th>
-              <th>Instruction</th>
-              <th style="width:90px;">Status</th>
-              <th>Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${bodyRows || `<tr><td colspan="6">No active rows.</td></tr>`}
-          </tbody>
-        </table>
-      </body>
-      </html>`;
-    }
-
-    printBtn.addEventListener("click", async () => {
-      await loadRows();
-      const html = buildPrintHTML(rows);
-
-      const w = window.open("", "_blank");
-      if (!w) {
-        alert("Pop-up blocked. Allow pop-ups to print.");
-        return;
-      }
-
-      w.document.open();
-      w.document.write(html);
-      w.document.close();
-
-      w.focus();
-      setTimeout(() => w.print(), 300);
-    });
-
-    // Init
-    buildTabs();
-    loadRows();
-    po.focus();
-  </script>
+
+<h1>Ledger Intake (Admin)</h1>
+
+<div class="top">
+
+<div class="right">
+
+<button id="printBtn">
+Export / Print Ledger
+</button>
+
+<button id="clearLedgerBtn" class="danger">
+Clear Entire Ledger
+</button>
+
+</div>
+
+</div>
+
+<div class="card">
+
+<label>PO Number</label>
+<input id="po" maxlength="5" placeholder="12345">
+
+<button id="addBtn">Add PO</button>
+
+<p id="msg" class="msg"></p>
+
+</div>
+
+<div id="tableWrap"></div>
+
+<script type="module">
+
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+const SUPABASE_URL = "https://pxiigthkswhnivanndfn.supabase.co";
+const SUPABASE_KEY = "YOUR_PUBLIC_KEY";
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const tableWrap = document.getElementById("tableWrap");
+const msg = document.getElementById("msg");
+
+const addBtn = document.getElementById("addBtn");
+const po = document.getElementById("po");
+
+const clearLedgerBtn = document.getElementById("clearLedgerBtn");
+
+let rows = [];
+
+function setMsg(t,k=""){
+msg.className="msg "+k;
+msg.textContent=t;
+}
+
+async function loadRows(){
+
+const { data,error } = await supabase
+.from("trucks")
+.select("*")
+.order("last_updated",{ascending:false});
+
+if(error){
+setMsg(error.message,"bad");
+return;
+}
+
+rows=data||[];
+render();
+
+}
+
+function render(){
+
+if(!rows.length){
+tableWrap.innerHTML="<p class='muted'>No trucks.</p>";
+return;
+}
+
+tableWrap.innerHTML=`
+
+<table>
+
+<thead>
+<tr>
+<th>PO</th>
+<th>Department</th>
+<th>Status</th>
+<th>Door</th>
+<th>Updated</th>
+</tr>
+</thead>
+
+<tbody>
+
+${rows.map(r=>`
+
+<tr>
+
+<td><b>${r.po_number}</b></td>
+<td>${r.department||""}</td>
+<td>${r.status||""}</td>
+<td>${r.ledger_door||""}</td>
+<td>${new Date(r.last_updated).toLocaleString()}</td>
+
+</tr>
+
+`).join("")}
+
+</tbody>
+
+</table>
+
+`;
+
+}
+
+addBtn.addEventListener("click",async()=>{
+
+const poVal=po.value.trim();
+
+if(!/^[0-9]{5}$/.test(poVal)){
+setMsg("PO must be 5 digits","bad");
+return;
+}
+
+setMsg("Saving…");
+
+const { error } = await supabase
+.from("trucks")
+.insert([{
+
+po_number:poVal,
+status:"Queue",
+last_updated:new Date().toISOString()
+
+}]);
+
+if(error){
+setMsg(error.message,"bad");
+return;
+}
+
+po.value="";
+setMsg("PO added","ok");
+
+loadRows();
+
+});
+
+clearLedgerBtn.addEventListener("click",async()=>{
+
+const ok=confirm("Delete the entire ledger?\n\nAll trucks will be removed.");
+
+if(!ok) return;
+
+setMsg("Clearing ledger…");
+
+const { error } = await supabase
+.from("trucks")
+.delete()
+.not("id","is",null);
+
+if(error){
+setMsg(error.message,"bad");
+return;
+}
+
+setMsg("Ledger cleared","ok");
+
+loadRows();
+
+});
+
+loadRows();
+
+</script>
+
 </body>
 </html>
