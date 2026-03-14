@@ -46,7 +46,6 @@
     <b>Admin-only.</b> Officers use <code>/board.html</code>
   </div>
 
-  <!-- TOP BAR (now includes Print button) -->
   <div class="top">
     <div class="countbar">
       <span class="count" id="countQueue">Queue: 0</span>
@@ -55,6 +54,7 @@
 
     <div class="right" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
       <button type="button" id="printBtn" style="width:auto;">Export / Print Ledger</button>
+      <button type="button" id="clearLedgerBtn" style="width:auto; background:#fff5f5; border:1px solid #f2b8b5;">Clear Entire Ledger</button>
       <div class="muted mini">Officer link: <a href="./board.html" target="_blank">board.html</a></div>
     </div>
   </div>
@@ -99,7 +99,7 @@
     // ===== Supabase =====
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
     const SUPABASE_URL = "https://pxiigthkswhnivanndfn.supabase.co";
-    const SUPABASE_KEY = "sb_publishable_fWVXeZM0mcylqczc6DWztA_Fu63kfj0";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB4aWlndGhrc3dobml2YW5uZGZuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk4NzAyNTEsImV4cCI6MjA4NTQ0NjI1MX0.Tdh0BYzT1RlqwwTdZGf6GUnTrJ5FGA-06vg-KpCthjY";
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
     // ===== PIN gate (UI-only) =====
@@ -135,6 +135,7 @@
     const countChecked = document.getElementById("countChecked");
 
     const printBtn = document.getElementById("printBtn");
+    const clearLedgerBtn = document.getElementById("clearLedgerBtn");
 
     let rows = [];
     let lastAction = null; // { type: "insert"|"update", id, beforeRow }
@@ -337,6 +338,24 @@
 
     clearBtn.addEventListener("click", clearForm);
     search.addEventListener("input", () => render(rows));
+
+    clearLedgerBtn.addEventListener("click", async () => {
+      const ok = confirm("Delete the entire ledger?\n\nThis will remove ALL trucks.");
+      if (!ok) return;
+
+      setMsg("Clearing ledger…");
+
+      const { error } = await supabase
+        .from("trucks")
+        .delete()
+        .not("id", "is", null);
+
+      if (error) return setMsg(`Delete error: ${error.message}`, "bad");
+
+      lastAction = null;
+      setMsg("Ledger cleared.", "ok");
+      await loadRows();
+    });
 
     tableWrap.addEventListener("click", async (e) => {
       const btn = e.target.closest("button");
