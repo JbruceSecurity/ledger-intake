@@ -1,216 +1,35 @@
 <!doctype html>
 <html>
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Ledger Intake (Admin)</title>
-
-<style>
-body { font-family:-apple-system,system-ui,Arial; padding:14px; max-width:1100px; margin:0 auto; }
-h1 { margin:0 0 6px; }
-.muted { color:#666; font-size:13px; }
-
-.top { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:12px 0; }
-.right { margin-left:auto; display:flex; gap:10px; }
-
-button { cursor:pointer; padding:12px; font-size:16px; }
-
-.danger {
-background:#fff5f5;
-border:1px solid #f2b8b5;
-}
-
-.card { border:1px solid #e6e6e6; border-radius:14px; padding:12px; }
-
-table { width:100%; border-collapse:collapse; margin-top:12px; }
-th,td { border:1px solid #ddd; padding:8px; }
-th { background:#f5f5f5; }
-
-.msg { margin:10px 0; font-weight:700; }
-.ok { color:#0b6b2f; }
-.bad { color:#b00020; }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ledger Intake (Admin)</title>
+  <style>
+    body { font-family: -apple-system, system-ui, Arial; padding: 14px; max-width: 1100px; margin: 0 auto; }
+    h1 { margin: 0 0 6px; }
+    .muted { color:#666; font-size: 13px; }
+    .top { display:flex; gap:10px; align-items:center; flex-wrap: wrap; margin: 12px 0; }
+    .right { margin-left:auto; }
+    button { cursor: pointer; font-size: 16px; padding: 12px; }
+    .card { border:1px solid #e6e6e6; border-radius:14px; padding:12px; margin-top: 16px; }
+    table { width:100%; border-collapse: collapse; margin-top:12px; }
+    th, td { border:1px solid #ddd; padding:8px; font-size:14px; vertical-align: top; }
+    th { background:#f5f5f5; text-align:left; }
+    .msg { margin: 10px 0; font-weight: 700; }
+    .ok { color:#0b6b2f; }
+    .bad { color:#b00020; }
+  </style>
 </head>
-
 <body>
-
-<h1>Ledger Intake (Admin)</h1>
-
-<div class="top">
-
-<div class="right">
-
-<button id="printBtn">
-Export / Print Ledger
-</button>
-
-<button id="clearLedgerBtn" class="danger">
-Clear Entire Ledger
-</button>
-
-</div>
-
-</div>
-
-<div class="card">
-
-<label>PO Number</label>
-<input id="po" maxlength="5" placeholder="12345">
-
-<button id="addBtn">Add PO</button>
-
-<p id="msg" class="msg"></p>
-
-</div>
-
-<div id="tableWrap"></div>
-
-<script type="module">
-
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-
-const SUPABASE_URL = "https://pxiigthkswhnivanndfn.supabase.co";
-const SUPABASE_KEY = "YOUR_PUBLIC_KEY";
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-
-const tableWrap = document.getElementById("tableWrap");
-const msg = document.getElementById("msg");
-
-const addBtn = document.getElementById("addBtn");
-const po = document.getElementById("po");
-
-const clearLedgerBtn = document.getElementById("clearLedgerBtn");
-
-let rows = [];
-
-function setMsg(t,k=""){
-msg.className="msg "+k;
-msg.textContent=t;
-}
-
-async function loadRows(){
-
-const { data,error } = await supabase
-.from("trucks")
-.select("*")
-.order("last_updated",{ascending:false});
-
-if(error){
-setMsg(error.message,"bad");
-return;
-}
-
-rows=data||[];
-render();
-
-}
-
-function render(){
-
-if(!rows.length){
-tableWrap.innerHTML="<p class='muted'>No trucks.</p>";
-return;
-}
-
-tableWrap.innerHTML=`
-
-<table>
-
-<thead>
-<tr>
-<th>PO</th>
-<th>Department</th>
-<th>Status</th>
-<th>Door</th>
-<th>Updated</th>
-</tr>
-</thead>
-
-<tbody>
-
-${rows.map(r=>`
-
-<tr>
-
-<td><b>${r.po_number}</b></td>
-<td>${r.department||""}</td>
-<td>${r.status||""}</td>
-<td>${r.ledger_door||""}</td>
-<td>${new Date(r.last_updated).toLocaleString()}</td>
-
-</tr>
-
-`).join("")}
-
-</tbody>
-
-</table>
-
-`;
-
-}
-
-addBtn.addEventListener("click",async()=>{
-
-const poVal=po.value.trim();
-
-if(!/^[0-9]{5}$/.test(poVal)){
-setMsg("PO must be 5 digits","bad");
-return;
-}
-
-setMsg("Saving…");
-
-const { error } = await supabase
-.from("trucks")
-.insert([{
-
-po_number:poVal,
-status:"Queue",
-last_updated:new Date().toISOString()
-
-}]);
-
-if(error){
-setMsg(error.message,"bad");
-return;
-}
-
-po.value="";
-setMsg("PO added","ok");
-
-loadRows();
-
-});
-
-clearLedgerBtn.addEventListener("click",async()=>{
-
-const ok=confirm("Delete the entire ledger?\n\nAll trucks will be removed.");
-
-if(!ok) return;
-
-setMsg("Clearing ledger…");
-
-const { error } = await supabase
-.from("trucks")
-.delete()
-.not("id","is",null);
-
-if(error){
-setMsg(error.message,"bad");
-return;
-}
-
-setMsg("Ledger cleared","ok");
-
-loadRows();
-
-});
-
-loadRows();
-
-</script>
-
-</body>
-</html>
+  <h1>Ledger Intake (Admin)</h1>
+  <div class="top">
+    <div class="right" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <button type="button" id="printBtn" style="width:auto;">Export / Print Ledger</button>
+      <button type="button" id="clearLedgerBtn" style="width:auto; background:#fff5f5; border:1px solid #f2b8b5;">
+        Clear Entire Ledger
+      </button>
+    </div>
+  </div>
+
+  <div class="card">
+    <label>PO Number (5
